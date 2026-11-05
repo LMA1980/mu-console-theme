@@ -1,0 +1,25 @@
+[package]
+name = "mu-console-theme"
+version = "0.1.0"
+edition = "2021"
+authors = ["LMA1980"]
+repository = "https://github.com/LMA1980/mu-console-theme"
+description = "MuConsole 'Avionics Terminal' theme: material tokens, 5x7 LCD glyphs, Nerd icon table, font metrics and a dependency-free SVG instrument library"
+license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
+
+[lib]
+name = "mu_console_theme"
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+roxmltree = "0.20"
+
+[[bin]]
+name = "mu-console-subset-unicodes"
+path = "src/bin/subset_unicodes.rs"
+
+[[bin]]
+name = "mu-console-tokens-css"
+path = "src/bin/tokens_css.rs"
