@@ -319,6 +319,18 @@ impl Skin for WireframeSkin {
                     "data-trainway-restart",
                     (s.control_id == "c5-restart-switch" && opt.id == "rst").then_some("true"),
                 )
+                .attr_opt(
+                    "data-ecosystem",
+                    (s.control_id == "reg-pkg-filter").then_some(opt.id),
+                )
+                .attr_opt(
+                    "data-purepath-filter",
+                    (s.control_id == "obs-pp-filter").then_some(opt.id),
+                )
+                .attr_opt(
+                    "data-log-severity",
+                    (s.control_id == "obs-log-filter").then_some(opt.id),
+                )
                 .attr("data-option-index", i)
                 .attr("role", if is_button_group { "button" } else { "radio" })
                 .attr("aria-checked", if active { "true" } else { "false" })
@@ -393,6 +405,7 @@ impl Skin for WireframeSkin {
         let repo_step = match r.control_id {
             "c2-repo-prev" => Some("prev"),
             "c2-repo-next" | "c2-repo-select" => Some("next"),
+            "c2-sub-prev" => Some("sub-prev"),
             "c2-sub-next" => Some("sub-next"),
             _ => None,
         };
@@ -656,6 +669,7 @@ impl Skin for WireframeSkin {
         let repo_step = match r.control_id {
             "c2-repo-prev" => Some("prev"),
             "c2-repo-next" | "c2-repo-select" => Some("next"),
+            "c2-sub-prev" => Some("sub-prev"),
             "c2-sub-next" => Some("sub-next"),
             _ => None,
         };
@@ -799,21 +813,100 @@ impl Skin for WireframeSkin {
             }
         }
 
-        // Discrete pager pill when total_pages > 1.
+        // Discrete pager pill + clickable ◀ / ▶ buttons when total_pages > 1.
         if s.total_pages > 1 && r.h >= 24.0 {
             let pager_txt = format!("PAGE {}/{}", s.page + 1, s.total_pages);
-            w.tag("text")
-                .attr("x", r.right() - 8.0)
-                .attr("y", r.bottom() - 6.0)
-                .attr("text-anchor", "end")
-                .attr("fill", COLOR_INFO)
-                .attr("font-family", s.font_family)
-                .attr("font-size", 11.0)
-                .attr("data-pager", s.control_id)
-                .text(&pager_txt);
+            if r.w >= 140.0 {
+                let btn_w = 22.0;
+                let btn_h = 16.0_f64.min((r.h - 4.0).max(12.0));
+                let btn_y = (r.bottom() - btn_h - 3.0).max(r.y + 2.0);
+                let next_x = (r.right() - btn_w - 6.0).max(r.x + 2.0);
+                let prev_x = (next_x - btn_w - 4.0).max(r.x + 2.0);
+                let txt_x = (prev_x - 6.0).max(r.x + 8.0);
+                w.tag("text")
+                    .attr("x", txt_x)
+                    .attr("y", btn_y + btn_h * 0.5 + 3.5)
+                    .attr("text-anchor", "end")
+                    .attr("fill", COLOR_INFO)
+                    .attr("font-family", s.font_family)
+                    .attr("font-size", 11.0)
+                    .attr("data-pager", s.control_id)
+                    .text(&pager_txt);
+                draw_pager_button(
+                    w,
+                    &format!("{}:prev", s.control_id),
+                    s.control_id,
+                    "prev",
+                    "Previous Page",
+                    "◀",
+                    Rect::new(prev_x, btn_y, btn_w, btn_h),
+                );
+                draw_pager_button(
+                    w,
+                    &format!("{}:next", s.control_id),
+                    s.control_id,
+                    "next",
+                    "Next Page",
+                    "▶",
+                    Rect::new(next_x, btn_y, btn_w, btn_h),
+                );
+            } else {
+                w.tag("text")
+                    .attr("x", r.right() - 8.0)
+                    .attr("y", r.bottom() - 6.0)
+                    .attr("text-anchor", "end")
+                    .attr("fill", COLOR_INFO)
+                    .attr("font-family", s.font_family)
+                    .attr("font-size", 11.0)
+                    .attr("data-pager", s.control_id)
+                    .text(&pager_txt);
+            }
         }
         w.close();
     }
+}
+
+fn draw_pager_button(
+    w: &mut SvgWriter,
+    id: &str,
+    screen_id: &str,
+    step_dir: &str,
+    aria_label: &str,
+    glyph: &str,
+    rect: Rect,
+) {
+    w.tag("g")
+        .attr("data-control-id", id)
+        .attr("data-page-step", step_dir)
+        .attr("data-bbox-x", rect.x)
+        .attr("data-bbox-y", rect.y)
+        .attr("data-bbox-w", rect.w)
+        .attr("data-bbox-h", rect.h)
+        .attr("role", "button")
+        .attr("aria-label", aria_label)
+        .attr("tabindex", 0_u32)
+        .open();
+    w.tag("rect")
+        .attr("x", rect.x)
+        .attr("y", rect.y)
+        .attr("width", rect.w)
+        .attr("height", rect.h)
+        .attr("rx", 3.0)
+        .attr("fill", "#1a2536")
+        .attr("stroke", "#3d5270")
+        .attr("stroke-width", 1.1)
+        .end();
+    w.tag("text")
+        .attr("x", rect.x + rect.w * 0.5)
+        .attr("y", rect.y + rect.h * 0.5 + 3.5)
+        .attr("text-anchor", "middle")
+        .attr("fill", COLOR_INFO)
+        .attr("font-family", "MuCRT, monospace")
+        .attr("font-size", 10.5)
+        .attr("font-weight", "bold")
+        .attr("data-pager", screen_id)
+        .text(glyph);
+    w.close();
 }
 
 fn draw_stepper_button(w: &mut SvgWriter, id: &str, aria_label: &str, glyph: &str, rect: Rect) {
@@ -872,6 +965,8 @@ fn emit_screen_row(
         w.tag("g")
             .attr("data-control-id", cid)
             .attr_opt("data-trace-id", cid.strip_prefix("trace:"))
+            .attr_opt("data-select-trace", cid.strip_prefix("select-trace:"))
+            .attr_opt("data-page-step", cid.strip_prefix("page-step:"))
             .attr_opt("data-cd-gate", cid.strip_prefix("gate:"))
             .attr_opt("data-package", cid.strip_prefix("pkg:"))
             .attr_opt("data-entity-id", cid.strip_prefix("entity:"))
