@@ -24,18 +24,34 @@ pub mod wood {
     pub const FIGURE_FREQ: (f64, f64) = (0.0007, 0.018);
 }
 
-/// Dark tungsten plate with fine satin brushing.
+/// Dark tungsten plate with fine satin brushing, plus secondary riveted
+/// anodized gunmetal-steel sub-plate stock.
 pub mod tungsten {
     pub const TOP: &str = "#2b2d31";
     pub const BOTTOM: &str = "#17181b";
     pub const BEVEL_LIGHT: &str = "#5a5e65";
     pub const BEVEL_DARK: &str = "#0c0d0f";
-    /// Long hairlines `feTurbulence` base frequency (x, y), 3 octaves.
-    pub const HAIR_FREQ: (f64, f64) = (0.004, 2.4);
+    /// Secondary riveted faceplate stock (cooler, lighter gunmetal-steel piece).
+    pub const SUB_TOP: &str = "#393f48";
+    pub const SUB_BOTTOM: &str = "#20242c";
+    pub const SUB_BEVEL_LIGHT: &str = "#7e8794";
+    pub const SUB_BEVEL_DARK: &str = "#08090c";
+    pub const SUB_SEAM: &str = "#050608";
+    /// Primary chassis bristle `feTurbulence` base frequency (x, y): finite
+    /// bristle strike length in X and crisp hairline pitch in Y.
+    pub const HAIR_FREQ: (f64, f64) = (0.018, 1.15);
     /// Hairline alpha amplitude.
     pub const HAIR_AMPLITUDE: f64 = 0.22;
-    /// Dark counter-lines base frequency (x, y).
-    pub const COUNTER_FREQ: (f64, f64) = (0.006, 1.6);
+    /// Shorter overlapping dark counter-strikes base frequency (x, y).
+    pub const COUNTER_FREQ: (f64, f64) = (0.034, 0.92);
+    /// Rotary/belt bristle micro-wander frequency (x, y) and displacement scale.
+    pub const CHATTER_FREQ: (f64, f64) = (0.035, 0.22);
+    pub const CHATTER_SCALE: f64 = 0.65;
+    /// Secondary riveted sub-plate bristle frequencies (finer grit, shorter strikes).
+    pub const SUB_HAIR_FREQ: (f64, f64) = (0.032, 1.42);
+    pub const SUB_COUNTER_FREQ: (f64, f64) = (0.056, 1.08);
+    pub const SUB_CHATTER_FREQ: (f64, f64) = (0.048, 0.28);
+    pub const SUB_CHATTER_SCALE: f64 = 0.75;
     /// Peak white opacity of the anisotropic vertical-band sheen (<= 7 %).
     pub const SHEEN_PEAK: f64 = 0.07;
     pub const CORNER_RADIUS: f64 = 4.0;
@@ -286,6 +302,11 @@ mod tests {
             tungsten::BOTTOM,
             tungsten::BEVEL_LIGHT,
             tungsten::BEVEL_DARK,
+            tungsten::SUB_TOP,
+            tungsten::SUB_BOTTOM,
+            tungsten::SUB_BEVEL_LIGHT,
+            tungsten::SUB_BEVEL_DARK,
+            tungsten::SUB_SEAM,
             etch::FACE,
             etch::RECESS,
             etch::LIP,

@@ -13,7 +13,7 @@
 //!   noise, or 5×7 dot-matrix stipple).
 
 use crate::defs::{crt_glass_id, ids, url, write_defs};
-use crate::instruments::surface::{plate, wood};
+use crate::instruments::surface::{chassis_plate, riveted_sub_plate, wood};
 use crate::instruments::switch::{indicator_lamp, screw, LensColor, SwitchAction};
 use crate::instruments::Rect;
 use crate::skin::{
@@ -1323,18 +1323,36 @@ impl Skin for AvionicsSkin {
 
     fn panel(&self, w: &mut SvgWriter, p: &Panel<'_>) {
         let r = p.rect;
+        let is_sub_plate =
+            matches!(p.id, "c4-card-plate" | "c3-phone-sheet") || p.id.ends_with("-card-plate");
         w.tag("g")
             .attr("data-panel-id", p.id)
             .attr_opt("role", p.role)
             .attr_opt("aria-label", p.aria_label)
             .open();
-        plate(w, r, true);
+        if is_sub_plate {
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let col = (r.x.max(0.0) / (r.w.max(60.0) * 0.85)).round() as usize;
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+            let row = (r.y.max(0.0) / (r.h.max(60.0) * 0.85)).round() as usize;
+            let variant = (col + row * 2) % ids::BRUSHED_SUB_VARIANTS.len();
+            riveted_sub_plate(w, r, variant, true);
+        } else {
+            let brush_id = match p.id {
+                "c1-nav-panel" => ids::BRUSHED_RAIL,
+                "c2-top-bar" => ids::BRUSHED_BAR,
+                _ => ids::BRUSHED,
+            };
+            chassis_plate(w, r, brush_id, true);
+        }
         if !p.title.is_empty() && r.h >= 24.0 {
-            let label = fit_box(p.title, r.w - 16.0, 11.0);
+            let title_x = if r.w >= 96.0 { r.x + 17.0 } else { r.x + 14.0 };
+            let avail_w = (r.right() - title_x - 10.0).max(16.0);
+            let label = fit_box(p.title, avail_w, 11.0);
             w.tag("text")
-                .attr("x", r.x + 10.0)
+                .attr("x", title_x)
                 .attr("y", r.y + 15.0)
-                .attr("fill", "#d8c6a8")
+                .attr("fill", if is_sub_plate { "#e4ecf5" } else { "#d8c6a8" })
                 .attr("font-family", "MuCRT, monospace")
                 .attr("font-size", 11.0)
                 .attr("font-weight", "bold")
@@ -2289,5 +2307,171 @@ mod tests {
                 "AvionicsSkin must emit tactile material/instrument token '{token}'"
             );
         }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn avionics_skin_separates_carrier_plate_from_riveted_sub_plates_with_finite_bristle_strikes() {
+        let skin = AvionicsSkin::default();
+        let mut w = SvgWriter::document(1280.0, 720.0);
+        skin.begin_frame(&mut w, 1280.0, 720.0);
+        skin.panel(
+            &mut w,
+            &Panel {
+                id: "c1-nav-panel",
+                title: "",
+                rect: Rect::new(4.0, 4.0, 88.0, 712.0),
+                role: Some("navigation"),
+                aria_label: Some("Area Navigation"),
+            },
+        );
+        skin.panel(
+            &mut w,
+            &Panel {
+                id: "c2-top-bar",
+                title: "",
+                rect: Rect::new(98.0, 4.0, 1178.0, 40.0),
+                role: Some("region"),
+                aria_label: Some("Context Bar"),
+            },
+        );
+        skin.panel(
+            &mut w,
+            &Panel {
+                id: "ci-scorecards-panel",
+                title: "CI REPOSITORY SCORECARDS",
+                rect: Rect::new(98.0, 48.0, 1178.0, 668.0),
+                role: Some("region"),
+                aria_label: Some("CI Repository Scorecards"),
+            },
+        );
+        skin.panel(
+            &mut w,
+            &Panel {
+                id: "c4-card-plate",
+                title: "LMA1980/ActionRunner",
+                rect: Rect::new(112.0, 82.0, 276.0, 148.0),
+                role: Some("group"),
+                aria_label: Some("Scorecard LMA1980/ActionRunner"),
+            },
+        );
+        skin.panel(
+            &mut w,
+            &Panel {
+                id: "c4-card-plate",
+                title: "LMA1980/MuIsolation",
+                rect: Rect::new(398.0, 82.0, 276.0, 148.0),
+                role: Some("group"),
+                aria_label: Some("Scorecard LMA1980/MuIsolation"),
+            },
+        );
+        let svg = w.finish_closing();
+        let doc = roxmltree::Document::parse(&svg).expect("valid avionics XML");
+
+        // 1. Every brushed filter uses finite-strike bristle gating + micro-chatter displacement
+        //    and a distinct primary noise seed so strikes never align across seams.
+        let mut seeds = std::collections::BTreeSet::new();
+        for fid in [
+            ids::BRUSHED,
+            ids::BRUSHED_RAIL,
+            ids::BRUSHED_BAR,
+            ids::BRUSHED_SUB_A,
+            ids::BRUSHED_SUB_B,
+            ids::BRUSHED_SUB_C,
+            ids::BRUSHED_SUB_D,
+        ] {
+            let filter = doc
+                .descendants()
+                .find(|n| n.has_tag_name("filter") && n.attribute("id") == Some(fid))
+                .unwrap_or_else(|| panic!("missing filter #{fid}"));
+            let turb_seed = filter
+                .children()
+                .find(|n| n.has_tag_name("feTurbulence") && n.attribute("result") == Some("t"))
+                .and_then(|n| n.attribute("seed"))
+                .expect("primary t feTurbulence seed");
+            assert!(
+                seeds.insert(turb_seed.to_owned()),
+                "duplicate primary brush seed {turb_seed} on #{fid}"
+            );
+            assert!(
+                filter.children().any(|n| {
+                    n.has_tag_name("feComposite")
+                        && n.attribute("in") == Some("hair_raw")
+                        && n.attribute("in2") == Some("gate")
+                        && n.attribute("operator") == Some("in")
+                }),
+                "filter #{fid} must gate bristle strikes to finite contact lengths"
+            );
+            assert!(
+                filter
+                    .children()
+                    .any(|n| n.has_tag_name("feDisplacementMap")),
+                "filter #{fid} must include micro-chatter displacement"
+            );
+        }
+
+        // 2. Carrier plate vs riveted sub-plates use distinct metal stock gradients,
+        //    distinct brush filters, and distinct fasteners (cabinet holes vs domed rivets).
+        let carrier = doc
+            .descendants()
+            .find(|n| n.attribute("data-panel-id") == Some("ci-scorecards-panel"))
+            .expect("ci-scorecards-panel group");
+        assert!(carrier.descendants().any(|n| {
+            n.has_tag_name("rect")
+                && n.attribute("fill") == Some("url(#mu-tungsten)")
+                && n.attribute("filter") == Some("url(#mu-brushed)")
+        }));
+        let carrier_title = carrier
+            .descendants()
+            .find(|n| n.has_tag_name("text"))
+            .expect("carrier title");
+        let carrier_title_x: f64 = carrier_title
+            .attribute("x")
+            .and_then(|v| v.parse().ok())
+            .expect("carrier title x");
+        assert!(
+            carrier_title_x >= 98.0 + 16.0,
+            "carrier title x={carrier_title_x} must clear corner fastener at x=107"
+        );
+
+        let cards: Vec<_> = doc
+            .descendants()
+            .filter(|n| n.attribute("data-panel-id") == Some("c4-card-plate"))
+            .collect();
+        assert_eq!(cards.len(), 2);
+        let mut card_filters = Vec::new();
+        for card in &cards {
+            let brushed_rect = card
+                .descendants()
+                .find(|n| {
+                    n.has_tag_name("rect") && n.attribute("fill") == Some("url(#mu-tungsten-sub)")
+                })
+                .expect("riveted sub-plate must use secondary alloy gradient #mu-tungsten-sub");
+            let flt = brushed_rect
+                .attribute("filter")
+                .expect("sub-plate brush filter")
+                .to_owned();
+            assert!(
+                flt.starts_with("url(#mu-brushed-sub-"),
+                "sub-plate must use dedicated sub-plate brush filter, got {flt}"
+            );
+            card_filters.push(flt);
+            assert!(
+                !card
+                    .descendants()
+                    .any(|n| n.has_tag_name("circle") && n.attribute("fill") == Some("#050505")),
+                "riveted sub-plate must not punch open #050505 cabinet holes through the backing plate"
+            );
+            assert!(
+                card.descendants()
+                    .any(|n| n.has_tag_name("circle")
+                        && n.attribute("fill") == Some("url(#mu-steel)")),
+                "riveted sub-plate must render domed steel rivets"
+            );
+        }
+        assert_ne!(
+            card_filters[0], card_filters[1],
+            "adjacent riveted sub-plates must use distinct brush filter variants"
+        );
     }
 }

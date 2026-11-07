@@ -13,8 +13,18 @@ use crate::tokens::{self, Effects, Phosphor, CRT_CD, CRT_CI};
 pub mod ids {
     pub const WOODGRAIN: &str = "mu-woodgrain";
     pub const BRUSHED: &str = "mu-brushed";
+    pub const BRUSHED_RAIL: &str = "mu-brushed-rail";
+    pub const BRUSHED_BAR: &str = "mu-brushed-bar";
+    pub const BRUSHED_SUB_A: &str = "mu-brushed-sub-a";
+    pub const BRUSHED_SUB_B: &str = "mu-brushed-sub-b";
+    pub const BRUSHED_SUB_C: &str = "mu-brushed-sub-c";
+    pub const BRUSHED_SUB_D: &str = "mu-brushed-sub-d";
+    pub const BRUSHED_SUB_VARIANTS: [&str; 4] =
+        [BRUSHED_SUB_A, BRUSHED_SUB_B, BRUSHED_SUB_C, BRUSHED_SUB_D];
     pub const SHEEN: &str = "mu-sheen";
+    pub const SHEEN_SUB: &str = "mu-sheen-sub";
     pub const TUNGSTEN: &str = "mu-tungsten";
+    pub const TUNGSTEN_SUB: &str = "mu-tungsten-sub";
     pub const STEEL: &str = "mu-steel";
     pub const PARKERIZED: &str = "mu-park";
     pub const RUBBER: &str = "mu-rubber";
@@ -176,33 +186,181 @@ fn wood_filter(w: &mut SvgWriter) {
     w.close();
 }
 
-/// Fine satin-brushed tungsten filter (hairlines + dark counter-lines).
-fn brushed_filter(w: &mut SvgWriter) {
-    use tokens::tungsten::{COUNTER_FREQ, HAIR_FREQ};
-    full_filter(w, ids::BRUSHED);
-    turbulence(w, HAIR_FREQ, 3, 5, "t");
+struct BrushPieceSpec {
+    id: &'static str,
+    hair_freq: (f64, f64),
+    hair_seed: u32,
+    hair_matrix: &'static str,
+    gate_freq: (f64, f64),
+    gate_seed: u32,
+    counter_freq: (f64, f64),
+    counter_seed: u32,
+    counter_matrix: &'static str,
+    chatter_freq: (f64, f64),
+    chatter_seed: u32,
+    chatter_scale: f64,
+}
+
+fn write_brushed_piece_filter(w: &mut SvgWriter, s: &BrushPieceSpec) {
+    full_filter(w, s.id);
+    // 1. Primary satin bristle grooves (crisp hairline pitch, finite horizontal strike correlation).
+    turbulence(w, s.hair_freq, 3, s.hair_seed, "t");
+    color_matrix(w, "t", s.hair_matrix, "hair_raw");
+    // 2. Staggered bristle-strike contact envelope so individual strikes start/stop independently
+    //    on every row rather than forming continuous ruler-straight horizontal stripes.
+    turbulence(w, s.gate_freq, 2, s.gate_seed, "g");
     color_matrix(
         w,
-        "t",
-        "0 0 0 0 0.78  0 0 0 0 0.80  0 0 0 0 0.83  0.22 0 0 0 -0.085",
-        "hair",
+        "g",
+        "0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  2.2 0 0 0 -0.45",
+        "gate",
     );
-    turbulence(w, COUNTER_FREQ, 2, 17, "t2");
-    color_matrix(
-        w,
-        "t2",
-        "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.20 0 0 0 -0.08",
-        "dark",
-    );
-    merge(w, &["hair", "dark"], Some("m"));
     w.tag("feComposite")
+        .attr("in", "hair_raw")
+        .attr("in2", "gate")
+        .attr("operator", "in")
+        .attr("result", "hair")
+        .end();
+    // 3. Shorter overlapping counter-strikes at an independent pitch and seed.
+    turbulence(w, s.counter_freq, 2, s.counter_seed, "t2");
+    color_matrix(w, "t2", s.counter_matrix, "dark");
+    merge(w, &["hair", "dark"], Some("m"));
+    // 4. Subtle rotary/belt bristle micro-wander to break up rigid horizontal scanline alignment.
+    turbulence(w, s.chatter_freq, 2, s.chatter_seed, "chatter");
+    w.tag("feDisplacementMap")
         .attr("in", "m")
+        .attr("in2", "chatter")
+        .attr("scale", s.chatter_scale)
+        .attr("xChannelSelector", "R")
+        .attr("yChannelSelector", "G")
+        .attr("result", "warped")
+        .end();
+    w.tag("feComposite")
+        .attr("in", "warped")
         .attr("in2", "SourceGraphic")
         .attr("operator", "in")
         .attr("result", "sc")
         .end();
     merge(w, &["SourceGraphic", "sc"], None);
     w.close();
+}
+
+/// Multi-workpiece satin-brushed metal filters: separate chassis and riveted
+/// sub-plate profiles with independent seeds, bristle strike lengths, and
+/// micro-chatter so brush strikes never align across riveted metal seams.
+fn brushed_filter(w: &mut SvgWriter) {
+    use tokens::tungsten::{
+        CHATTER_FREQ, CHATTER_SCALE, COUNTER_FREQ, HAIR_FREQ, SUB_CHATTER_FREQ, SUB_CHATTER_SCALE,
+        SUB_COUNTER_FREQ, SUB_HAIR_FREQ,
+    };
+    let chassis_hair = "0 0 0 0 0.78  0 0 0 0 0.80  0 0 0 0 0.83  0.30 0 0 0 -0.11";
+    let chassis_dark = "0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0.24 0 0 0 -0.09";
+    let sub_hair = "0 0 0 0 0.86  0 0 0 0 0.90  0 0 0 0 0.96  0.32 0 0 0 -0.12";
+    let sub_dark = "0 0 0 0 0.04  0 0 0 0 0.05  0 0 0 0 0.07  0.26 0 0 0 -0.10";
+
+    let specs = [
+        BrushPieceSpec {
+            id: ids::BRUSHED,
+            hair_freq: HAIR_FREQ,
+            hair_seed: 13,
+            hair_matrix: chassis_hair,
+            gate_freq: (0.065, 0.65),
+            gate_seed: 29,
+            counter_freq: COUNTER_FREQ,
+            counter_seed: 43,
+            counter_matrix: chassis_dark,
+            chatter_freq: CHATTER_FREQ,
+            chatter_seed: 59,
+            chatter_scale: CHATTER_SCALE,
+        },
+        BrushPieceSpec {
+            id: ids::BRUSHED_RAIL,
+            hair_freq: (0.022, 1.24),
+            hair_seed: 197,
+            hair_matrix: chassis_hair,
+            gate_freq: (0.074, 0.68),
+            gate_seed: 211,
+            counter_freq: (0.039, 0.98),
+            counter_seed: 223,
+            counter_matrix: chassis_dark,
+            chatter_freq: (0.038, 0.24),
+            chatter_seed: 229,
+            chatter_scale: 0.68,
+        },
+        BrushPieceSpec {
+            id: ids::BRUSHED_BAR,
+            hair_freq: (0.020, 1.19),
+            hair_seed: 239,
+            hair_matrix: chassis_hair,
+            gate_freq: (0.069, 0.62),
+            gate_seed: 251,
+            counter_freq: (0.036, 0.95),
+            counter_seed: 263,
+            counter_matrix: chassis_dark,
+            chatter_freq: (0.036, 0.21),
+            chatter_seed: 271,
+            chatter_scale: 0.62,
+        },
+        BrushPieceSpec {
+            id: ids::BRUSHED_SUB_A,
+            hair_freq: SUB_HAIR_FREQ,
+            hair_seed: 71,
+            hair_matrix: sub_hair,
+            gate_freq: (0.095, 0.78),
+            gate_seed: 83,
+            counter_freq: SUB_COUNTER_FREQ,
+            counter_seed: 97,
+            counter_matrix: sub_dark,
+            chatter_freq: SUB_CHATTER_FREQ,
+            chatter_seed: 109,
+            chatter_scale: SUB_CHATTER_SCALE,
+        },
+        BrushPieceSpec {
+            id: ids::BRUSHED_SUB_B,
+            hair_freq: (0.036, 1.48),
+            hair_seed: 113,
+            hair_matrix: sub_hair,
+            gate_freq: (0.102, 0.82),
+            gate_seed: 127,
+            counter_freq: (0.062, 1.14),
+            counter_seed: 137,
+            counter_matrix: sub_dark,
+            chatter_freq: (0.052, 0.30),
+            chatter_seed: 149,
+            chatter_scale: 0.78,
+        },
+        BrushPieceSpec {
+            id: ids::BRUSHED_SUB_C,
+            hair_freq: (0.029, 1.36),
+            hair_seed: 157,
+            hair_matrix: sub_hair,
+            gate_freq: (0.089, 0.74),
+            gate_seed: 167,
+            counter_freq: (0.052, 1.04),
+            counter_seed: 173,
+            counter_matrix: sub_dark,
+            chatter_freq: (0.044, 0.26),
+            chatter_seed: 181,
+            chatter_scale: 0.72,
+        },
+        BrushPieceSpec {
+            id: ids::BRUSHED_SUB_D,
+            hair_freq: (0.038, 1.52),
+            hair_seed: 191,
+            hair_matrix: sub_hair,
+            gate_freq: (0.108, 0.85),
+            gate_seed: 277,
+            counter_freq: (0.066, 1.18),
+            counter_seed: 283,
+            counter_matrix: sub_dark,
+            chatter_freq: (0.055, 0.32),
+            chatter_seed: 293,
+            chatter_scale: 0.80,
+        },
+    ];
+    for spec in &specs {
+        write_brushed_piece_filter(w, spec);
+    }
 }
 
 fn materials(w: &mut SvgWriter) {
@@ -222,11 +380,33 @@ fn materials(w: &mut SvgWriter) {
     );
     linear(
         w,
+        ids::SHEEN_SUB,
+        (0.0, 0.0, 1.0, 0.22),
+        &[
+            (0.0, white, Some(0.0)),
+            (0.24, white, Some(0.05)),
+            (0.34, white, Some(tokens::tungsten::SHEEN_PEAK)),
+            (0.46, white, Some(0.035)),
+            (1.0, white, Some(0.0)),
+        ],
+    );
+    linear(
+        w,
         ids::TUNGSTEN,
         (0.0, 0.0, 0.0, 1.0),
         &[
             (0.0, tokens::tungsten::TOP, None),
             (1.0, tokens::tungsten::BOTTOM, None),
+        ],
+    );
+    linear(
+        w,
+        ids::TUNGSTEN_SUB,
+        (0.0, 0.0, 0.25, 1.0),
+        &[
+            (0.0, tokens::tungsten::SUB_TOP, None),
+            (0.55, "#2b3038", None),
+            (1.0, tokens::tungsten::SUB_BOTTOM, None),
         ],
     );
     linear(
