@@ -30,7 +30,7 @@ pub fn wood(w: &mut SvgWriter, width: f64, height: f64) {
             w.tag("rect")
                 .attr("x", x0)
                 .attr("y", 0.0)
-                .attr("width", leaf)
+                .attr("width", leaf.min((width - x0).max(0.0)))
                 .attr("height", height)
                 .attr("fill", "#000")
                 .attr("opacity", 0.10)

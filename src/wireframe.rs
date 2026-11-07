@@ -12,15 +12,15 @@
 //! - zero decorative filters (`<feGaussianBlur>`, wood veneer, tungsten
 //!   noise, or 5×7 dot-matrix stipple).
 
-use crate::defs::write_defs;
+use crate::defs::{crt_glass_id, ids, url, write_defs};
 use crate::instruments::surface::{plate, wood};
-use crate::instruments::switch::SwitchAction;
+use crate::instruments::switch::{indicator_lamp, screw, LensColor, SwitchAction};
 use crate::instruments::Rect;
 use crate::skin::{
     Lamp, Panel, Readout, Rotary, Screen, ScreenTrack, Selector, SemanticTone, SignalGlyph, Skin,
 };
 use crate::svg::{PathData, SvgWriter};
-use crate::tokens::Effects;
+use crate::tokens::{Effects, CRT_CD, CRT_CI};
 
 pub const BG_CANVAS: &str = "#0e1116";
 pub const BG_PANEL: &str = "#141922";
@@ -1343,24 +1343,772 @@ impl Skin for AvionicsSkin {
         w.close();
     }
 
+    #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
     fn selector(&self, w: &mut SvgWriter, s: &Selector<'_>) {
-        WireframeSkin.selector(w, s);
+        let r = s.rect;
+        if s.control_id == "c2-font-switch" {
+            let dyslexic_on = s.selected == 1;
+            let border = if dyslexic_on { COLOR_PASS } else { "#555a63" };
+            w.tag("g")
+                .attr("data-control-id", s.control_id)
+                .attr("data-dyslexia-toggle", "true")
+                .attr("data-bbox-x", r.x)
+                .attr("data-bbox-y", r.y)
+                .attr("data-bbox-w", r.w)
+                .attr("data-bbox-h", r.h)
+                .attr("role", "switch")
+                .attr("aria-checked", if dyslexic_on { "true" } else { "false" })
+                .attr("aria-label", "Use dyslexia-friendly font")
+                .attr("tabindex", 0_u32)
+                .open();
+            w.tag("rect")
+                .attr("x", r.x)
+                .attr("y", r.y)
+                .attr("width", r.w)
+                .attr("height", r.h)
+                .attr("rx", 4.0)
+                .attr("fill", url(ids::PARKERIZED))
+                .attr("stroke", border)
+                .attr("stroke-width", 1.4)
+                .end();
+            if r.w >= 64.0 && r.h >= 20.0 {
+                screw(w, r.x + 4.0, r.y + 4.0, 1.5, 30.0);
+                screw(w, r.right() - 4.0, r.bottom() - 4.0, 1.5, 120.0);
+            }
+
+            let box_sz = (r.h - 14.0).clamp(14.0, 18.0);
+            let box_x = r.x + 8.0;
+            let lamp_r = (box_sz * 0.34).clamp(3.2, 5.0);
+            indicator_lamp(
+                w,
+                box_x + box_sz * 0.5,
+                r.y + r.h * 0.5,
+                LensColor::Green,
+                dyslexic_on,
+                lamp_r,
+            );
+
+            let label_x = box_x + box_sz + 6.0;
+            let avail_w = (r.right() - label_x - 5.0).max(20.0);
+            let (raw_lbl, f_sz) = if avail_w >= 148.0 {
+                ("Dyslexia-friendly font", 11.5)
+            } else {
+                ("Dyslexia font", 11.0)
+            };
+            let lbl = fit_box(raw_lbl, avail_w, f_sz);
+            w.tag("text")
+                .attr("x", label_x)
+                .attr("y", r.y + r.h * 0.5 + 4.0)
+                .attr("fill", if dyslexic_on { "#b8ffb0" } else { "#e6dcc8" })
+                .attr("font-family", "MuCRT, monospace")
+                .attr("font-size", f_sz)
+                .attr("font-weight", "bold")
+                .text(&lbl);
+            w.close();
+            return;
+        }
+
+        let role = match s.action {
+            SwitchAction::Maintained => "radiogroup",
+            SwitchAction::SpringReturn | SwitchAction::PullToTurn => "group",
+        };
+        w.tag("g")
+            .attr("data-control-id", s.control_id)
+            .attr("data-bbox-x", r.x)
+            .attr("data-bbox-y", r.y)
+            .attr("data-bbox-w", r.w)
+            .attr("data-bbox-h", r.h)
+            .attr("role", role)
+            .attr("aria-label", s.label)
+            .attr("tabindex", 0_u32)
+            .open();
+        w.tag("rect")
+            .attr("x", r.x)
+            .attr("y", r.y)
+            .attr("width", r.w)
+            .attr("height", r.h)
+            .attr("rx", 4.0)
+            .attr(
+                "fill",
+                if s.action == SwitchAction::PullToTurn {
+                    "#28120e".to_owned()
+                } else {
+                    url(ids::PARKERIZED)
+                },
+            )
+            .attr(
+                "stroke",
+                if s.pulled || s.action == SwitchAction::PullToTurn {
+                    "#ff5533"
+                } else {
+                    "#4a4e57"
+                },
+            )
+            .attr("stroke-width", 1.3)
+            .end();
+        if r.w >= 48.0 && r.h >= 24.0 {
+            screw(w, r.x + 4.0, r.y + 4.0, 1.5, 20.0);
+            screw(w, r.right() - 4.0, r.bottom() - 4.0, 1.5, 110.0);
+        }
+
+        let n = s.options.len().max(1);
+        let pad = 4.0;
+        let inner = r.inset(pad, pad, pad, pad);
+        for (i, opt) in s.options.iter().enumerate() {
+            let active = i == s.selected;
+            let cell = if s.horizontal {
+                let cw = inner.w / n as f64;
+                Rect::new(inner.x + i as f64 * cw, inner.y, cw, inner.h)
+            } else {
+                let ch = inner.h / n as f64;
+                Rect::new(inner.x, inner.y + i as f64 * ch, inner.w, ch)
+            };
+            let is_button_group = s.action != SwitchAction::Maintained;
+            let stroke = if active {
+                opt.tone.wireframe_stroke()
+            } else if is_button_group {
+                "#5a606b"
+            } else {
+                "#353942"
+            };
+            let fill = if active {
+                if s.action == SwitchAction::PullToTurn && i == 1 {
+                    "#4a1c12".to_owned()
+                } else {
+                    "#1d2c1e".to_owned()
+                }
+            } else {
+                url(ids::RUBBER)
+            };
+            let opt_id = format!("{}:{}", s.control_id, opt.id);
+            w.tag("g")
+                .attr("data-control-id", opt_id)
+                .attr_opt(
+                    "data-area",
+                    (s.control_id == "c1-area-selector").then_some(opt.id),
+                )
+                .attr_opt(
+                    "data-subview",
+                    (s.control_id == "c2-subview-bar").then_some(opt.id),
+                )
+                .attr_opt(
+                    "data-trainway-restart",
+                    (s.control_id == "c5-restart-switch" && opt.id == "rst").then_some("true"),
+                )
+                .attr_opt(
+                    "data-ecosystem",
+                    (s.control_id == "reg-pkg-filter").then_some(opt.id),
+                )
+                .attr_opt(
+                    "data-purepath-filter",
+                    (s.control_id == "obs-pp-filter").then_some(opt.id),
+                )
+                .attr_opt(
+                    "data-log-severity",
+                    (s.control_id == "obs-log-filter").then_some(opt.id),
+                )
+                .attr("data-option-index", i)
+                .attr("role", if is_button_group { "button" } else { "radio" })
+                .attr("aria-checked", if active { "true" } else { "false" })
+                .attr("aria-label", opt.label)
+                .open();
+            w.tag("rect")
+                .attr("x", cell.x + 1.5)
+                .attr("y", cell.y + 1.5)
+                .attr("width", (cell.w - 3.0).max(1.0))
+                .attr("height", (cell.h - 3.0).max(1.0))
+                .attr("rx", 3.5)
+                .attr("fill", fill)
+                .attr("stroke", stroke)
+                .attr("stroke-width", if active { 1.8 } else { 1.0 })
+                .end();
+            if active {
+                w.tag("circle")
+                    .attr("cx", (cell.x + 6.5).min(cell.right() - 2.0))
+                    .attr("cy", cell.y + cell.h * 0.5)
+                    .attr("r", 2.4)
+                    .attr("fill", opt.tone.wireframe_fg())
+                    .attr("filter", url(ids::LAMP_GLOW))
+                    .end();
+            }
+            let text_raw = match opt.badge.filter(|b| *b > 0) {
+                Some(b) => format!("{} ({b})", opt.label),
+                None => opt.label.to_owned(),
+            };
+            let font_sz = if cell.w < 76.0 && text_raw.len() >= 7 {
+                10.5
+            } else {
+                12.0
+            };
+            let text = fit_box(&text_raw, cell.w, font_sz);
+            w.tag("text")
+                .attr("x", cell.x + cell.w * 0.5)
+                .attr("y", cell.y + cell.h * 0.5 + 4.0)
+                .attr("text-anchor", "middle")
+                .attr(
+                    "fill",
+                    if active {
+                        "#fff3d6"
+                    } else if is_button_group {
+                        "#d8c6a8"
+                    } else {
+                        "#a89f91"
+                    },
+                )
+                .attr("font-family", "MuCRT, monospace")
+                .attr("font-size", font_sz)
+                .attr_opt("font-weight", active.then_some("bold"))
+                .text(&text);
+            w.close();
+        }
+        w.close();
     }
 
+    #[allow(clippy::too_many_lines)]
     fn rotary(&self, w: &mut SvgWriter, r: &Rotary<'_>) {
-        WireframeSkin.rotary(w, r);
+        let rect = r.rect;
+        let repo_step = match r.control_id {
+            "c2-repo-prev" => Some("prev"),
+            "c2-repo-next" | "c2-repo-select" => Some("next"),
+            "c2-sub-prev" => Some("sub-prev"),
+            "c2-sub-next" => Some("sub-next"),
+            _ => None,
+        };
+        w.tag("g")
+            .attr("data-control-id", r.control_id)
+            .attr_opt("data-repo-step", repo_step)
+            .attr("data-bbox-x", rect.x)
+            .attr("data-bbox-y", rect.y)
+            .attr("data-bbox-w", rect.w)
+            .attr("data-bbox-h", rect.h)
+            .attr("role", "group")
+            .attr("aria-label", "Repository and Submodule Selector")
+            .attr("tabindex", 0_u32)
+            .open();
+        w.tag("rect")
+            .attr("x", rect.x)
+            .attr("y", rect.y)
+            .attr("width", rect.w)
+            .attr("height", rect.h)
+            .attr("rx", 4.0)
+            .attr("fill", url(ids::PARKERIZED))
+            .attr("stroke", if r.settling { COLOR_WARN } else { "#55585e" })
+            .attr("stroke-width", 1.2)
+            .end();
+        if rect.w >= 80.0 && rect.h >= 60.0 {
+            screw(w, rect.x + 5.0, rect.y + 5.0, 1.8, 15.0);
+            screw(w, rect.right() - 5.0, rect.y + 5.0, 1.8, 105.0);
+            screw(w, rect.x + 5.0, rect.bottom() - 5.0, 1.8, 195.0);
+            screw(w, rect.right() - 5.0, rect.bottom() - 5.0, 1.8, 285.0);
+        }
+
+        let hdr_h = if rect.y < 120.0 {
+            let hdr_lbl = fit_box("REPOSITORY & SUBMODULE SELECTOR", rect.w - 16.0, 11.0);
+            w.tag("text")
+                .attr("x", rect.x + 10.0)
+                .attr("y", rect.y + 14.0)
+                .attr("fill", "#d8c6a8")
+                .attr("font-family", "MuCRT, monospace")
+                .attr("font-size", 11.0)
+                .attr("font-weight", "bold")
+                .text(&hdr_lbl);
+            18.0
+        } else {
+            4.0
+        };
+
+        let inner = Rect::new(
+            rect.x + 8.0,
+            rect.y + hdr_h + 4.0,
+            (rect.w - 16.0).max(40.0),
+            (rect.h - hdr_h - 10.0).max(48.0),
+        );
+        let row_h = (inner.h / 2.65).max(20.0);
+        let step_btn_w = 28.0_f64.min(inner.w * 0.14);
+        let disp_w = (inner.w - 2.0 * step_btn_w - 8.0).max(32.0);
+
+        // Outer ring row (Repository) with STN LCD backlit readout.
+        let outer_rect = Rect::new(inner.x, inner.y, inner.w, row_h - 3.0);
+        w.tag("g")
+            .attr("data-control-id", format!("{}:outer", r.control_id))
+            .attr("role", "spinbutton")
+            .attr("aria-label", "Outer Ring Repository")
+            .attr("aria-valuenow", r.outer_index)
+            .attr("aria-valuemin", 0_usize)
+            .attr("aria-valuemax", r.outer_total.saturating_sub(1))
+            .open();
+        w.tag("rect")
+            .attr("x", outer_rect.x)
+            .attr("y", outer_rect.y)
+            .attr("width", disp_w)
+            .attr("height", outer_rect.h)
+            .attr("rx", 3.0)
+            .attr("fill", "#0b0e08")
+            .attr("stroke", "#4f6236")
+            .attr("stroke-width", 1.2)
+            .end();
+        w.tag("rect")
+            .attr("x", outer_rect.x + 1.5)
+            .attr("y", outer_rect.y + 1.5)
+            .attr("width", (disp_w - 3.0).max(1.0))
+            .attr("height", (outer_rect.h - 3.0).max(1.0))
+            .attr("rx", 2.0)
+            .attr("fill", url(ids::LCD_BACKLIGHT))
+            .attr("opacity", 0.35)
+            .end();
+        let outer_txt = fit_box(
+            &format!(
+                "REPO [{}/{}]: {}",
+                r.outer_index + usize::from(r.outer_total > 0),
+                r.outer_total,
+                r.outer_label
+            ),
+            disp_w,
+            12.0,
+        );
+        w.tag("text")
+            .attr("x", outer_rect.x + 8.0)
+            .attr("y", outer_rect.y + outer_rect.h * 0.5 + 4.0)
+            .attr("fill", "#d8ff8a")
+            .attr("font-family", "MuCRT, monospace")
+            .attr("font-size", 12.0)
+            .text(&outer_txt);
+        draw_stepper_button(
+            w,
+            &format!("{}:outer-prev", r.control_id),
+            "Previous Repository",
+            "◀",
+            Rect::new(
+                outer_rect.x + disp_w + 4.0,
+                outer_rect.y,
+                step_btn_w,
+                outer_rect.h,
+            ),
+        );
+        draw_stepper_button(
+            w,
+            &format!("{}:outer-next", r.control_id),
+            "Next Repository",
+            "▶",
+            Rect::new(
+                outer_rect.x + disp_w + step_btn_w + 8.0,
+                outer_rect.y,
+                step_btn_w,
+                outer_rect.h,
+            ),
+        );
+        w.close();
+
+        // Inner ring row (Submodule) with STN LCD backlit readout.
+        let sub_rect = Rect::new(inner.x, inner.y + row_h, inner.w, row_h - 3.0);
+        w.tag("g")
+            .attr("data-control-id", format!("{}:inner", r.control_id))
+            .attr("role", "spinbutton")
+            .attr("aria-label", "Inner Ring Submodule")
+            .attr("aria-valuenow", r.inner_index)
+            .attr("aria-valuemin", 0_usize)
+            .attr("aria-valuemax", r.inner_total.saturating_sub(1))
+            .open();
+        w.tag("rect")
+            .attr("x", sub_rect.x)
+            .attr("y", sub_rect.y)
+            .attr("width", disp_w)
+            .attr("height", sub_rect.h)
+            .attr("rx", 3.0)
+            .attr("fill", "#0b0e08")
+            .attr("stroke", "#4f6236")
+            .attr("stroke-width", 1.0)
+            .end();
+        w.tag("rect")
+            .attr("x", sub_rect.x + 1.5)
+            .attr("y", sub_rect.y + 1.5)
+            .attr("width", (disp_w - 3.0).max(1.0))
+            .attr("height", (sub_rect.h - 3.0).max(1.0))
+            .attr("rx", 2.0)
+            .attr("fill", url(ids::LCD_BACKLIGHT))
+            .attr("opacity", 0.30)
+            .end();
+        let sub_txt = fit_box(
+            &format!(
+                "SUBMODULE [{}/{}]: {}",
+                r.inner_index,
+                r.inner_total.saturating_sub(1),
+                r.inner_label
+            ),
+            disp_w,
+            12.0,
+        );
+        w.tag("text")
+            .attr("x", sub_rect.x + 8.0)
+            .attr("y", sub_rect.y + sub_rect.h * 0.5 + 4.0)
+            .attr("fill", "#d8ff8a")
+            .attr("font-family", "MuCRT, monospace")
+            .attr("font-size", 12.0)
+            .text(&sub_txt);
+        draw_stepper_button(
+            w,
+            &format!("{}:inner-prev", r.control_id),
+            "Previous Submodule",
+            "◀",
+            Rect::new(
+                sub_rect.x + disp_w + 4.0,
+                sub_rect.y,
+                step_btn_w,
+                sub_rect.h,
+            ),
+        );
+        draw_stepper_button(
+            w,
+            &format!("{}:inner-next", r.control_id),
+            "Next Submodule",
+            "▶",
+            Rect::new(
+                sub_rect.x + disp_w + step_btn_w + 8.0,
+                sub_rect.y,
+                step_btn_w,
+                sub_rect.h,
+            ),
+        );
+        w.close();
+
+        // Filter / status row.
+        let flt_y = inner.y + 2.0 * row_h;
+        let flt_h = (inner.bottom() - flt_y).max(16.0);
+        let flt_rect = Rect::new(inner.x, flt_y, inner.w, flt_h);
+        let status = if !r.filter_query.is_empty() {
+            format!("FILTER: /{}", r.filter_query)
+        } else if r.settling {
+            "APPLYING SELECTION (350ms)…".to_owned()
+        } else {
+            "Press [/] to filter repositories by name".to_owned()
+        };
+        let flt_txt = fit_box(&status, flt_rect.w, 11.0);
+        w.tag("text")
+            .attr("x", flt_rect.x + 4.0)
+            .attr("y", flt_rect.y + flt_rect.h * 0.5 + 4.0)
+            .attr("fill", if r.settling { COLOR_WARN } else { "#d8c6a8" })
+            .attr("font-family", "MuCRT, monospace")
+            .attr("font-size", 11.0)
+            .text(&flt_txt);
+
+        w.close();
     }
 
     fn lamp(&self, w: &mut SvgWriter, l: &Lamp<'_>) {
-        WireframeSkin.lamp(w, l);
+        let r = l.rect;
+        let stroke = if l.lit {
+            l.tone.wireframe_stroke()
+        } else {
+            "#3b3e45"
+        };
+        let fg = if l.lit { "#ffe8b8" } else { "#8c8273" };
+        let lens = match l.tone {
+            SemanticTone::Pass | SemanticTone::Info => LensColor::Green,
+            SemanticTone::Warn => LensColor::Amber,
+            SemanticTone::Fail | SemanticTone::Neutral => LensColor::Red,
+        };
+        w.tag("g")
+            .attr("data-control-id", l.control_id)
+            .attr("data-bbox-x", r.x)
+            .attr("data-bbox-y", r.y)
+            .attr("data-bbox-w", r.w)
+            .attr("data-bbox-h", r.h)
+            .attr("role", "status")
+            .attr("aria-label", l.label)
+            .attr("data-lit", if l.lit { "true" } else { "false" })
+            .open();
+        let pill_h = r.h.min(24.0);
+        let pill_y = r.y + (r.h - pill_h) * 0.5;
+        w.tag("rect")
+            .attr("x", r.x)
+            .attr("y", pill_y)
+            .attr("width", r.w)
+            .attr("height", pill_h)
+            .attr("rx", 3.5)
+            .attr("fill", "#101215")
+            .attr("stroke", stroke)
+            .attr("stroke-width", if l.lit { 1.4 } else { 1.0 })
+            .end();
+        let dot_x = r.x + 8.5;
+        let dot_y = r.y + r.h * 0.5;
+        indicator_lamp(w, dot_x, dot_y, lens, l.lit, 3.2);
+        let txt = fit_box(l.label, (r.w - 8.0).max(16.0), 10.0);
+        w.tag("text")
+            .attr("x", r.x + 14.0 + (r.w - 16.0).max(0.0) * 0.5)
+            .attr("y", r.y + r.h * 0.5 + 3.5)
+            .attr("text-anchor", "middle")
+            .attr("fill", fg)
+            .attr("font-family", "MuCRT, monospace")
+            .attr("font-size", 10.0)
+            .text(&txt);
+        w.close();
     }
 
     fn readout(&self, w: &mut SvgWriter, r: &Readout<'_>) {
-        WireframeSkin.readout(w, r);
+        let rect = r.rect;
+        let repo_step = match r.control_id {
+            "c2-repo-prev" => Some("prev"),
+            "c2-repo-next" | "c2-repo-select" => Some("next"),
+            "c2-sub-prev" => Some("sub-prev"),
+            "c2-sub-next" => Some("sub-next"),
+            _ => None,
+        };
+        w.tag("g")
+            .attr("data-control-id", r.control_id)
+            .attr_opt("data-repo-step", repo_step)
+            .attr("data-bbox-x", rect.x)
+            .attr("data-bbox-y", rect.y)
+            .attr("data-bbox-w", rect.w)
+            .attr("data-bbox-h", rect.h)
+            .attr("role", if r.interactive { "button" } else { "status" })
+            .attr(
+                "aria-label",
+                if r.label.is_empty() {
+                    r.value.to_owned()
+                } else {
+                    format!("{}: {}", r.label, r.value)
+                },
+            )
+            .attr_opt("tabindex", r.interactive.then_some(0_u32))
+            .open();
+
+        if r.control_id == "c4-page-dots" {
+            w.tag("rect")
+                .attr("x", rect.x)
+                .attr("y", rect.y)
+                .attr("width", rect.w)
+                .attr("height", rect.h)
+                .attr("rx", 3.0)
+                .attr("fill", "#0c0e09")
+                .attr("stroke", "#3d4430")
+                .attr("stroke-width", 1.0)
+                .end();
+            let txt = fit_box(&format!("{}: {}", r.label, r.value), rect.w, 11.5);
+            w.tag("text")
+                .attr("x", rect.x + rect.w * 0.5)
+                .attr("y", rect.y + rect.h * 0.5 + 4.0)
+                .attr("text-anchor", "middle")
+                .attr("fill", "#d8ff8a")
+                .attr("font-family", "MuCRT, monospace")
+                .attr("font-size", 11.5)
+                .text(&txt);
+            w.close();
+            return;
+        }
+
+        let is_button = r.interactive && !r.control_id.starts_with("c2-");
+        let stroke = if is_button {
+            r.tone.wireframe_stroke()
+        } else {
+            "#475432"
+        };
+        w.tag("rect")
+            .attr("x", rect.x)
+            .attr("y", rect.y)
+            .attr("width", rect.w)
+            .attr("height", rect.h)
+            .attr("rx", if is_button { 4.5 } else { 2.5 })
+            .attr(
+                "fill",
+                if is_button {
+                    url(ids::PARKERIZED)
+                } else {
+                    "#0a0d07".to_owned()
+                },
+            )
+            .attr("stroke", stroke)
+            .attr("stroke-width", if is_button { 1.5 } else { 1.0 })
+            .end();
+        if !is_button && rect.w >= 6.0 && rect.h >= 6.0 {
+            w.tag("rect")
+                .attr("x", rect.x + 1.5)
+                .attr("y", rect.y + 1.5)
+                .attr("width", (rect.w - 3.0).max(1.0))
+                .attr("height", (rect.h - 3.0).max(1.0))
+                .attr("rx", 1.5)
+                .attr("fill", url(ids::LCD_BACKLIGHT))
+                .attr("opacity", 0.32)
+                .end();
+        }
+        let combined = if r.label.is_empty() {
+            r.value.to_owned()
+        } else {
+            format!("{}: {}", r.label, r.value)
+        };
+        let txt = fit_box(&combined, rect.w, 12.0);
+        let fg = match r.tone {
+            SemanticTone::Neutral => "#d8ff8a",
+            SemanticTone::Pass => "#7aff9e",
+            SemanticTone::Warn => "#ffc44d",
+            SemanticTone::Fail => "#ff6b6b",
+            SemanticTone::Info => "#9ce8ff",
+        };
+        w.tag("text")
+            .attr(
+                "x",
+                if is_button {
+                    rect.x + rect.w * 0.5
+                } else {
+                    rect.x + 8.0
+                },
+            )
+            .attr("y", rect.y + rect.h * 0.5 + 4.0)
+            .attr_opt("text-anchor", is_button.then_some("middle"))
+            .attr("fill", fg)
+            .attr("font-family", "MuCRT, monospace")
+            .attr("font-size", 12.0)
+            .attr_opt("font-weight", is_button.then_some("bold"))
+            .text(&txt);
+        w.close();
     }
 
+    #[allow(clippy::cast_precision_loss, clippy::too_many_lines)]
     fn screen(&self, w: &mut SvgWriter, s: &Screen<'_>) {
-        WireframeSkin.screen(w, s);
+        let r = s.rect;
+        let phosphor = if s.control_id.starts_with("c6-") || s.control_id.starts_with("cd-") {
+            &CRT_CD
+        } else {
+            &CRT_CI
+        };
+        w.tag("g")
+            .attr("data-control-id", s.control_id)
+            .attr("data-bbox-x", r.x)
+            .attr("data-bbox-y", r.y)
+            .attr("data-bbox-w", r.w)
+            .attr("data-bbox-h", r.h)
+            .attr("role", "region")
+            .attr("aria-label", s.title)
+            .attr("data-cols", s.cols)
+            .attr("data-rows", s.rows)
+            .open();
+        w.tag("rect")
+            .attr("x", r.x)
+            .attr("y", r.y)
+            .attr("width", r.w)
+            .attr("height", r.h)
+            .attr("rx", 5.0)
+            .attr("fill", "#080a0c")
+            .attr("stroke", "#3a3f47")
+            .attr("stroke-width", 1.5)
+            .end();
+        w.tag("rect")
+            .attr("x", r.x + 1.0)
+            .attr("y", r.y + 1.0)
+            .attr("width", (r.w - 2.0).max(1.0))
+            .attr("height", (r.h - 2.0).max(1.0))
+            .attr("rx", 4.0)
+            .attr("fill", url(crt_glass_id(phosphor)))
+            .end();
+
+        w.tag("g")
+            .attr("class", format!("mu-crt mu-crt-{}", phosphor.name))
+            .attr_opt("filter", self.effects.bloom.then(|| url(ids::PHOSPHOR)))
+            .open();
+
+        let font_px = s.font_px.max(10.0);
+        let row_h = (font_px * 1.3).max(14.0);
+        let max_rows = s.rows.max(1);
+        let pad_x = 8.0;
+        let pad_y = 8.0;
+
+        if !s.tracks.is_empty() && !s.stations.is_empty() && r.h >= 180.0 {
+            draw_integrated_trainway(w, s, r, font_px, row_h, max_rows, pad_x, pad_y);
+        } else {
+            if !s.tracks.is_empty() && !s.stations.is_empty() {
+                draw_tracks_compact(w, r, s.stations, s.tracks);
+            }
+            let visible_count = s.lines.len().min(max_rows).max(1);
+            let step_h = if r.h >= 220.0 && visible_count >= 6 {
+                ((r.h - 2.0 * pad_y - 8.0) / visible_count as f64).clamp(row_h, row_h * 1.65)
+            } else {
+                row_h
+            };
+            for (idx, row) in s.lines.iter().take(max_rows).enumerate() {
+                let y = r.y + pad_y + (idx as f64 + 0.8) * step_h;
+                if y > r.bottom() - 4.0 {
+                    break;
+                }
+                emit_screen_row(w, s, r, row, r.x + pad_x, y, font_px, row_h);
+            }
+        }
+        w.close();
+
+        if self.effects.scanlines {
+            w.tag("rect")
+                .attr("x", r.x + 1.0)
+                .attr("y", r.y + 1.0)
+                .attr("width", (r.w - 2.0).max(1.0))
+                .attr("height", (r.h - 2.0).max(1.0))
+                .attr("rx", 4.0)
+                .attr("fill", url(ids::SCANLINES))
+                .end();
+        }
+        w.tag("rect")
+            .attr("x", r.x + 1.0)
+            .attr("y", r.y + 1.0)
+            .attr("width", (r.w - 2.0).max(1.0))
+            .attr("height", (r.h - 2.0).max(1.0))
+            .attr("rx", 4.0)
+            .attr("fill", url(ids::VIGNETTE))
+            .end();
+        w.tag("rect")
+            .attr("x", r.x + 1.0)
+            .attr("y", r.y + 1.0)
+            .attr("width", (r.w - 2.0).max(1.0))
+            .attr("height", (r.h - 2.0).max(1.0))
+            .attr("rx", 4.0)
+            .attr("fill", url(ids::GLASS))
+            .end();
+
+        if s.total_pages > 1 && r.h >= 24.0 {
+            let pager_txt = format!("PAGE {}/{}", s.page + 1, s.total_pages);
+            if r.w >= 140.0 {
+                let btn_w = 22.0;
+                let btn_h = 16.0_f64.min((r.h - 4.0).max(12.0));
+                let btn_y = (r.bottom() - btn_h - 3.0).max(r.y + 2.0);
+                let next_x = (r.right() - btn_w - 6.0).max(r.x + 2.0);
+                let prev_x = (next_x - btn_w - 4.0).max(r.x + 2.0);
+                let txt_x = (prev_x - 6.0).max(r.x + 8.0);
+                w.tag("text")
+                    .attr("x", txt_x)
+                    .attr("y", btn_y + btn_h * 0.5 + 3.5)
+                    .attr("text-anchor", "end")
+                    .attr("fill", COLOR_INFO)
+                    .attr("font-family", s.font_family)
+                    .attr("font-size", 11.0)
+                    .attr("data-pager", s.control_id)
+                    .text(&pager_txt);
+                draw_pager_button(
+                    w,
+                    &format!("{}:prev", s.control_id),
+                    s.control_id,
+                    "prev",
+                    "Previous Page",
+                    "◀",
+                    Rect::new(prev_x, btn_y, btn_w, btn_h),
+                );
+                draw_pager_button(
+                    w,
+                    &format!("{}:next", s.control_id),
+                    s.control_id,
+                    "next",
+                    "Next Page",
+                    "▶",
+                    Rect::new(next_x, btn_y, btn_w, btn_h),
+                );
+            } else {
+                w.tag("text")
+                    .attr("x", r.right() - 8.0)
+                    .attr("y", r.bottom() - 6.0)
+                    .attr("text-anchor", "end")
+                    .attr("fill", COLOR_INFO)
+                    .attr("font-family", s.font_family)
+                    .attr("font-size", 11.0)
+                    .attr("data-pager", s.control_id)
+                    .text(&pager_txt);
+            }
+        }
+        w.close();
     }
 }
 
@@ -1526,5 +2274,20 @@ mod tests {
             wf_controls, av_controls,
             "WireframeSkin and AvionicsSkin must emit identical control IDs, ARIA attributes, and bounding boxes"
         );
+        for token in [
+            ids::WOODGRAIN,
+            ids::BRUSHED,
+            ids::PARKERIZED,
+            ids::LCD_BACKLIGHT,
+            ids::LENS_RED,
+            ids::CRT_CI_GLASS,
+            ids::VIGNETTE,
+            ids::GLASS,
+        ] {
+            assert!(
+                av_svg.contains(token),
+                "AvionicsSkin must emit tactile material/instrument token '{token}'"
+            );
+        }
     }
 }
