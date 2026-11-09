@@ -833,8 +833,18 @@ impl Skin for WireframeSkin {
             if r.w >= 140.0 {
                 let btn_w = 22.0;
                 let btn_h = 16.0_f64.min((r.h - 4.0).max(12.0));
-                let btn_y = (r.bottom() - btn_h - 3.0).max(r.y + 2.0);
-                let next_x = (r.right() - btn_w - 6.0).max(r.x + 2.0);
+                let top_header_pager = !s.tracks.is_empty() && r.w >= 680.0;
+                let btn_y = if top_header_pager {
+                    r.y + 3.0
+                } else {
+                    (r.bottom() - btn_h - 3.0).max(r.y + 2.0)
+                };
+                let right_pad = if top_header_pager || r.w < 520.0 {
+                    6.0
+                } else {
+                    168.0
+                };
+                let next_x = (r.right() - btn_w - right_pad).max(r.x + 2.0);
                 let prev_x = (next_x - btn_w - 4.0).max(r.x + 2.0);
                 let txt_x = (prev_x - 6.0).max(r.x + 8.0);
                 w.tag("text")
@@ -1173,16 +1183,30 @@ fn draw_integrated_trainway(
     let trunk_offset = if split_layout { 0.55 } else { 0.72 };
     let trunk_y = (track_top + trunk_offset * band_h).min(schematic_bottom - 3.0);
 
+    let max_fork_stage = u32::try_from(n_st.saturating_sub(2)).unwrap_or(0);
     for (idx, tr) in s.tracks.iter().enumerate() {
         let ty = (track_top + (idx as f64 + trunk_offset) * band_h).min(schematic_bottom - 3.0);
-        let fork_x =
-            left + f64::from(tr.fork_stage.min(u32::try_from(n_st - 1).unwrap_or(0))) * span;
+        let eff_fork_stage = if tr.fading {
+            0
+        } else {
+            tr.fork_stage.min(max_fork_stage)
+        };
+        let fork_x = left + f64::from(eff_fork_stage) * span;
+        let turnout_end_x = (fork_x + 18.0).min(right);
         let path = if idx == 0 || tr.lane == 0 {
             PathData::new().m(left, ty).h(right).build()
+        } else if tr.fading && right > turnout_end_x + 18.0 {
+            let merge_x = (right - 18.0).max(turnout_end_x);
+            PathData::new()
+                .m(fork_x, trunk_y)
+                .q(fork_x + 8.0, ty, turnout_end_x, ty)
+                .h(merge_x)
+                .q(right - 8.0, ty, right, trunk_y)
+                .build()
         } else {
             PathData::new()
                 .m(fork_x, trunk_y)
-                .q(fork_x + 8.0, ty, (fork_x + 18.0).min(right), ty)
+                .q(fork_x + 8.0, ty, turnout_end_x, ty)
                 .h(right)
                 .build()
         };
@@ -2204,8 +2228,18 @@ impl Skin for AvionicsSkin {
             if r.w >= 140.0 {
                 let btn_w = 22.0;
                 let btn_h = 16.0_f64.min((r.h - 4.0).max(12.0));
-                let btn_y = (r.bottom() - btn_h - 3.0).max(r.y + 2.0);
-                let next_x = (r.right() - btn_w - 6.0).max(r.x + 2.0);
+                let top_header_pager = !s.tracks.is_empty() && r.w >= 680.0;
+                let btn_y = if top_header_pager {
+                    r.y + 3.0
+                } else {
+                    (r.bottom() - btn_h - 3.0).max(r.y + 2.0)
+                };
+                let right_pad = if top_header_pager || r.w < 520.0 {
+                    6.0
+                } else {
+                    168.0
+                };
+                let next_x = (r.right() - btn_w - right_pad).max(r.x + 2.0);
                 let prev_x = (next_x - btn_w - 4.0).max(r.x + 2.0);
                 let txt_x = (prev_x - 6.0).max(r.x + 8.0);
                 w.tag("text")
