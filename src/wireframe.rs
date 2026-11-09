@@ -1038,7 +1038,7 @@ fn draw_integrated_trainway(
         emit_screen_row(w, s, r, first, r.x + pad_x, hdr_y, font_px, row_h);
         emitted_rows += 1;
     }
-    let sep_top_y = (r.y + pad_y + row_h + 4.0).min(r.bottom() - 4.0);
+    let sep_top_y = (r.y + pad_y + row_h + 3.0).min(r.bottom() - 4.0);
     w.tag("path")
         .attr(
             "d",
@@ -1052,11 +1052,23 @@ fn draw_integrated_trainway(
         .end();
 
     // 2. Station column headers + vertical dashed guide lines.
+    // On desktop/tablet (`r.w >= 520.0`), reserve a compact left column for branch/job metadata
+    // so each track label and its railway schematic share a single compact horizontal row.
+    let split_layout = r.w >= 520.0;
+    let label_col_w = if split_layout {
+        (r.w * 0.34).clamp(176.0, 310.0)
+    } else {
+        0.0
+    };
     let n_st = s.stations.len().max(1);
-    let left = r.x + 28.0;
-    let right = (r.right() - 28.0).max(left + 10.0);
+    let left = if split_layout {
+        (r.x + pad_x + label_col_w + 14.0).min(r.right() - 48.0)
+    } else {
+        r.x + 24.0
+    };
+    let right = (r.right() - 22.0).max(left + 10.0);
     let span = (right - left) / n_st.saturating_sub(1).max(1) as f64;
-    let st_hdr_y = (sep_top_y + 15.0).min(r.bottom() - 20.0);
+    let st_hdr_y = (sep_top_y + 13.0).min(r.bottom() - 20.0);
 
     let footer_start = (1 + s.tracks.len()).min(s.lines.len());
     let footer_count = s
@@ -1065,18 +1077,49 @@ fn draw_integrated_trainway(
         .saturating_sub(footer_start)
         .min(max_rows.saturating_sub(1 + s.tracks.len()));
     let footer_h = if footer_count > 0 {
-        (footer_count as f64) * (row_h + 2.0) + 10.0
+        (footer_count as f64) * (row_h + 1.0) + 8.0
     } else {
-        8.0
+        6.0
     };
-    let track_top = (st_hdr_y + 10.0).min(r.bottom() - footer_h - 16.0);
-    let track_bottom = (r.bottom() - footer_h - 6.0).max(track_top + 20.0);
+    let track_top = (st_hdr_y + 8.0).min(r.bottom() - footer_h - 14.0);
+    let track_bottom = (r.bottom() - footer_h - 4.0).max(track_top + 16.0);
+    let n_tracks = s.tracks.len().max(1);
+    let raw_band_h = (track_bottom - track_top) / n_tracks as f64;
+    let band_h = if split_layout {
+        raw_band_h.clamp((row_h + 2.0).max(18.0), (row_h + 6.0).min(24.0))
+    } else {
+        raw_band_h.clamp(24.0, 32.0)
+    };
+    let schematic_bottom = (track_top + (n_tracks as f64) * band_h + 4.0).min(track_bottom);
+
+    if split_layout {
+        w.tag("text")
+            .attr("x", r.x + pad_x)
+            .attr("y", st_hdr_y)
+            .attr("fill", TEXT_MUTED)
+            .attr("font-family", s.font_family)
+            .attr("font-size", (font_px - 2.0).max(10.0))
+            .attr("data-pager", "station-hdr")
+            .text("LANE / BRANCH / STAGE");
+        let div_x = (left - 12.0).max(r.x + pad_x + 40.0);
+        w.tag("path")
+            .attr(
+                "d",
+                PathData::new()
+                    .m(div_x, sep_top_y)
+                    .v(schematic_bottom)
+                    .build(),
+            )
+            .attr("stroke", "#18202c")
+            .attr("stroke-width", 1.0)
+            .end();
+    }
 
     for (i, &st_lbl) in s.stations.iter().enumerate() {
         let sx = left + i as f64 * span;
         let guide = PathData::new()
-            .m(sx, st_hdr_y + 4.0)
-            .v(track_bottom)
+            .m(sx, st_hdr_y + 3.0)
+            .v(schematic_bottom)
             .build();
         w.tag("path")
             .attr("d", guide)
@@ -1125,14 +1168,13 @@ fn draw_integrated_trainway(
         w.close();
     }
 
-    // 3. Integrated track bands: draw schematic track paths and signals first, then render
-    //    each track's label over a clean background backing strip so curves never cross text.
-    let n_tracks = s.tracks.len().max(1);
-    let band_h = ((track_bottom - track_top) / n_tracks as f64).max(22.0);
-    let trunk_y = (track_top + 0.68 * band_h).min(track_bottom - 4.0);
+    // 3. Integrated track bands: draw schematic track paths and signals, and render
+    //    each track's label cleanly in the left column (desktop/tablet) or compact strip (phone).
+    let trunk_offset = if split_layout { 0.55 } else { 0.72 };
+    let trunk_y = (track_top + trunk_offset * band_h).min(schematic_bottom - 3.0);
 
     for (idx, tr) in s.tracks.iter().enumerate() {
-        let ty = (track_top + (idx as f64 + 0.68) * band_h).min(track_bottom - 4.0);
+        let ty = (track_top + (idx as f64 + trunk_offset) * band_h).min(schematic_bottom - 3.0);
         let fork_x =
             left + f64::from(tr.fork_stage.min(u32::try_from(n_st - 1).unwrap_or(0))) * span;
         let path = if idx == 0 || tr.lane == 0 {
@@ -1140,7 +1182,7 @@ fn draw_integrated_trainway(
         } else {
             PathData::new()
                 .m(fork_x, trunk_y)
-                .q(fork_x + 10.0, ty, (fork_x + 22.0).min(right), ty)
+                .q(fork_x + 8.0, ty, (fork_x + 18.0).min(right), ty)
                 .h(right)
                 .build()
         };
@@ -1159,7 +1201,7 @@ fn draw_integrated_trainway(
             .attr("stroke", stroke)
             .attr(
                 "stroke-width",
-                if idx == 0 || tr.lane == 0 { 2.2 } else { 1.6 },
+                if idx == 0 || tr.lane == 0 { 2.0 } else { 1.5 },
             )
             .attr_opt("stroke-dasharray", tr.dashed.then_some("5 3"))
             .attr("data-track-ref", tr.ref_name)
@@ -1168,10 +1210,10 @@ fn draw_integrated_trainway(
         for &(st_idx, glyph, tone) in tr.signals {
             let sx = left + f64::from(st_idx) * span;
             let sig_cid = format!("c5-signal:{}:{st_idx}", tr.ref_name);
-            let sig_x = (sx - 8.0).clamp(r.x + 2.0, (r.right() - 18.0).max(r.x + 2.0));
-            let sig_y = (ty - 8.0).clamp(r.y + 2.0, (r.bottom() - 18.0).max(r.y + 2.0));
-            let sig_w = 16.0_f64.min((r.right() - sig_x - 2.0).max(4.0));
-            let sig_h = 16.0_f64.min((r.bottom() - sig_y - 2.0).max(4.0));
+            let sig_x = (sx - 7.0).clamp(r.x + 2.0, (r.right() - 16.0).max(r.x + 2.0));
+            let sig_y = (ty - 7.0).clamp(r.y + 2.0, (r.bottom() - 16.0).max(r.y + 2.0));
+            let sig_w = 14.0_f64.min((r.right() - sig_x - 2.0).max(4.0));
+            let sig_h = 14.0_f64.min((r.bottom() - sig_y - 2.0).max(4.0));
             w.tag("g")
                 .attr("data-control-id", sig_cid)
                 .attr("role", "button")
@@ -1190,29 +1232,35 @@ fn draw_integrated_trainway(
     }
 
     for (idx, _tr) in s.tracks.iter().enumerate() {
-        let ty = (track_top + (idx as f64 + 0.68) * band_h).min(track_bottom - 4.0);
-        let label_y = (ty - 12.0).max(st_hdr_y + 12.0);
+        let ty = (track_top + (idx as f64 + trunk_offset) * band_h).min(schematic_bottom - 3.0);
+        let label_y = if split_layout {
+            (ty + 4.0).min(r.bottom() - 4.0)
+        } else {
+            (ty - 9.0).max(st_hdr_y + 10.0)
+        };
         if emitted_rows < max_rows {
             if let Some(row) = s.lines.get(1 + idx) {
-                let est_w = ((row.text.chars().count() + 4) as f64 * font_px * 0.64)
-                    .min((r.w - 2.0 * pad_x).max(40.0));
-                w.tag("rect")
-                    .attr("x", r.x + pad_x - 2.0)
-                    .attr("y", (label_y - font_px).max(r.y + 2.0))
-                    .attr("width", est_w)
-                    .attr("height", font_px + 6.0)
-                    .attr("rx", 2.0)
-                    .attr("fill", BG_SCREEN)
-                    .end();
+                if !split_layout {
+                    let est_w = ((row.text.chars().count() + 4) as f64 * font_px * 0.64)
+                        .min((r.w - 2.0 * pad_x).max(40.0));
+                    w.tag("rect")
+                        .attr("x", r.x + pad_x - 2.0)
+                        .attr("y", (label_y - font_px).max(r.y + 2.0))
+                        .attr("width", est_w)
+                        .attr("height", font_px + 4.0)
+                        .attr("rx", 2.0)
+                        .attr("fill", BG_SCREEN)
+                        .end();
+                }
                 emit_screen_row(w, s, r, row, r.x + pad_x, label_y, font_px, row_h);
                 emitted_rows += 1;
             }
         }
     }
 
-    // 4. Footer rows (YARD +N, INTERCHANGE ⇄ ...).
+    // 4. Footer rows (YARD +N, INTERCHANGE ⇄ ...), anchored directly below the last track.
     if footer_count > 0 {
-        let sep_bot_y = (r.bottom() - footer_h).max(track_top);
+        let sep_bot_y = schematic_bottom.max(track_top);
         w.tag("path")
             .attr(
                 "d",
@@ -1231,7 +1279,7 @@ fn draw_integrated_trainway(
             .take(max_rows.saturating_sub(emitted_rows))
             .enumerate()
         {
-            let fy = sep_bot_y + 4.0 + (fi as f64 + 0.8) * row_h;
+            let fy = sep_bot_y + 3.0 + (fi as f64 + 0.8) * row_h;
             if fy <= r.bottom() - 4.0 {
                 emit_screen_row(w, s, r, row, r.x + pad_x, fy, font_px, row_h);
             }
