@@ -717,7 +717,15 @@ impl Skin for WireframeSkin {
             return;
         }
 
-        let is_button = r.interactive && !r.control_id.starts_with("c2-");
+        let is_c2_stepper = matches!(
+            r.control_id,
+            "c2-repo-prev"
+                | "c2-repo-next"
+                | "c2-sub-prev"
+                | "c2-sub-next"
+                | "c2-phone-rotary-trigger"
+        );
+        let is_button = r.interactive && (!r.control_id.starts_with("c2-") || is_c2_stepper);
         let fill = if is_button { "#182232" } else { BG_SCREEN };
         let stroke = if is_button {
             r.tone.wireframe_stroke()
@@ -799,8 +807,14 @@ impl Skin for WireframeSkin {
                 draw_tracks_compact(w, r, s.stations, s.tracks);
             }
             let visible_count = s.lines.len().min(max_rows).max(1);
+            let pager_reserve = if s.total_pages > 1 && r.h >= 64.0 {
+                18.0
+            } else {
+                0.0
+            };
             let step_h = if r.h >= 220.0 && visible_count >= 6 {
-                ((r.h - 2.0 * pad_y - 8.0) / visible_count as f64).clamp(row_h, row_h * 1.65)
+                ((r.h - 2.0 * pad_y - 8.0 - pager_reserve) / visible_count as f64)
+                    .clamp(row_h, row_h * 1.65)
             } else {
                 row_h
             };
@@ -978,15 +992,20 @@ fn emit_screen_row(
             .attr("tabindex", 0_u32)
             .attr("aria-selected", if row.selected { "true" } else { "false" })
             .open();
-        if row.selected {
-            w.tag("rect")
-                .attr("x", r.x + 2.0)
-                .attr("y", (y - font_px).max(r.y + 1.0))
-                .attr("width", (r.w - 4.0).max(1.0))
-                .attr("height", row_h.min((r.bottom() - y + font_px).max(1.0)))
-                .attr("fill", "#1b2433")
-                .end();
-        }
+        w.tag("rect")
+            .attr("x", r.x + 2.0)
+            .attr("y", (y - font_px).max(r.y + 1.0))
+            .attr("width", (r.w - 4.0).max(1.0))
+            .attr("height", row_h.min((r.bottom() - y + font_px).max(1.0)))
+            .attr(
+                "fill",
+                if row.selected {
+                    "#1b2433"
+                } else {
+                    "transparent"
+                },
+            )
+            .end();
     }
     w.tag("text")
         .attr("x", x)
@@ -1077,6 +1096,23 @@ fn draw_integrated_trainway(
         } else {
             st_lbl
         };
+        let st_cid = format!("c5-station:{}", st_lbl.to_ascii_lowercase());
+        let st_hit_x = (sx - 22.0).clamp(r.x + 2.0, (r.right() - 24.0).max(r.x + 2.0));
+        let st_hit_y = (st_hdr_y - 11.0).clamp(r.y + 2.0, (r.bottom() - 16.0).max(r.y + 2.0));
+        let st_hit_w = 44.0_f64.min((r.right() - st_hit_x - 2.0).max(4.0));
+        let st_hit_h = 14.0_f64.min((r.bottom() - st_hit_y - 2.0).max(4.0));
+        w.tag("g")
+            .attr("data-control-id", st_cid)
+            .attr("role", "button")
+            .attr("tabindex", 0_u32)
+            .open();
+        w.tag("rect")
+            .attr("x", st_hit_x)
+            .attr("y", st_hit_y)
+            .attr("width", st_hit_w)
+            .attr("height", st_hit_h)
+            .attr("fill", "transparent")
+            .end();
         w.tag("text")
             .attr("x", sx)
             .attr("y", st_hdr_y)
@@ -1086,6 +1122,7 @@ fn draw_integrated_trainway(
             .attr("font-size", (font_px - 2.0).max(10.0))
             .attr("data-pager", "station-hdr")
             .text(display_lbl);
+        w.close();
     }
 
     // 3. Integrated track bands: draw schematic track paths and signals first, then render
@@ -1130,7 +1167,25 @@ fn draw_integrated_trainway(
 
         for &(st_idx, glyph, tone) in tr.signals {
             let sx = left + f64::from(st_idx) * span;
+            let sig_cid = format!("c5-signal:{}:{st_idx}", tr.ref_name);
+            let sig_x = (sx - 8.0).clamp(r.x + 2.0, (r.right() - 18.0).max(r.x + 2.0));
+            let sig_y = (ty - 8.0).clamp(r.y + 2.0, (r.bottom() - 18.0).max(r.y + 2.0));
+            let sig_w = 16.0_f64.min((r.right() - sig_x - 2.0).max(4.0));
+            let sig_h = 16.0_f64.min((r.bottom() - sig_y - 2.0).max(4.0));
+            w.tag("g")
+                .attr("data-control-id", sig_cid)
+                .attr("role", "button")
+                .attr("tabindex", 0_u32)
+                .open();
+            w.tag("rect")
+                .attr("x", sig_x)
+                .attr("y", sig_y)
+                .attr("width", sig_w)
+                .attr("height", sig_h)
+                .attr("fill", "transparent")
+                .end();
             render_signal_shape(w, sx, ty, glyph, tone);
+            w.close();
         }
     }
 
@@ -1914,7 +1969,15 @@ impl Skin for AvionicsSkin {
             return;
         }
 
-        let is_button = r.interactive && !r.control_id.starts_with("c2-");
+        let is_c2_stepper = matches!(
+            r.control_id,
+            "c2-repo-prev"
+                | "c2-repo-next"
+                | "c2-sub-prev"
+                | "c2-sub-next"
+                | "c2-phone-rotary-trigger"
+        );
+        let is_button = r.interactive && (!r.control_id.starts_with("c2-") || is_c2_stepper);
         let stroke = if is_button {
             r.tone.wireframe_stroke()
         } else {
@@ -1946,6 +2009,7 @@ impl Skin for AvionicsSkin {
                 .attr("rx", 1.5)
                 .attr("fill", url(ids::LCD_BACKLIGHT))
                 .attr("opacity", 0.32)
+                .attr("pointer-events", "none")
                 .end();
         }
         let combined = if r.label.is_empty() {
@@ -2036,8 +2100,14 @@ impl Skin for AvionicsSkin {
                 draw_tracks_compact(w, r, s.stations, s.tracks);
             }
             let visible_count = s.lines.len().min(max_rows).max(1);
+            let pager_reserve = if s.total_pages > 1 && r.h >= 64.0 {
+                18.0
+            } else {
+                0.0
+            };
             let step_h = if r.h >= 220.0 && visible_count >= 6 {
-                ((r.h - 2.0 * pad_y - 8.0) / visible_count as f64).clamp(row_h, row_h * 1.65)
+                ((r.h - 2.0 * pad_y - 8.0 - pager_reserve) / visible_count as f64)
+                    .clamp(row_h, row_h * 1.65)
             } else {
                 row_h
             };
@@ -2059,6 +2129,7 @@ impl Skin for AvionicsSkin {
                 .attr("height", (r.h - 2.0).max(1.0))
                 .attr("rx", 4.0)
                 .attr("fill", url(ids::SCANLINES))
+                .attr("pointer-events", "none")
                 .end();
         }
         w.tag("rect")
@@ -2068,6 +2139,7 @@ impl Skin for AvionicsSkin {
             .attr("height", (r.h - 2.0).max(1.0))
             .attr("rx", 4.0)
             .attr("fill", url(ids::VIGNETTE))
+            .attr("pointer-events", "none")
             .end();
         w.tag("rect")
             .attr("x", r.x + 1.0)
@@ -2076,6 +2148,7 @@ impl Skin for AvionicsSkin {
             .attr("height", (r.h - 2.0).max(1.0))
             .attr("rx", 4.0)
             .attr("fill", url(ids::GLASS))
+            .attr("pointer-events", "none")
             .end();
 
         if s.total_pages > 1 && r.h >= 24.0 {
