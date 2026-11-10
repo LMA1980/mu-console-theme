@@ -179,9 +179,10 @@ impl Skin for WireframeSkin {
                 .attr("stroke-width", 1.5)
                 .end();
 
-            // Checkbox / switch indicator box on the left.
-            let box_sz = (r.h - 14.0).clamp(14.0, 18.0);
-            let box_x = r.x + 8.0;
+            // Checkbox / switch indicator box on the left with 6px padding.
+            let pad = 6.0;
+            let box_sz = (r.h - 2.0 * pad).clamp(12.0, 15.0);
+            let box_x = r.x + pad;
             let box_y = r.y + (r.h - box_sz) * 0.5;
             w.tag("rect")
                 .attr("x", box_x)
@@ -207,14 +208,10 @@ impl Skin for WireframeSkin {
                     .end();
             }
 
-            let label_x = box_x + box_sz + 6.0;
-            let avail_w = (r.right() - label_x - 5.0).max(20.0);
-            let (raw_lbl, f_sz) = if avail_w >= 148.0 {
-                ("Dyslexia-friendly font", 11.5)
-            } else {
-                ("Dyslexia font", 11.0)
-            };
-            let lbl = fit_box(raw_lbl, avail_w, f_sz);
+            let label_x = box_x + box_sz + pad;
+            let avail_w = (r.right() - label_x - pad).max(16.0);
+            let (raw_lbl, f_sz) = ("Dyslexia font", 11.0);
+            let lbl = fit_box(raw_lbl, avail_w + 16.0, f_sz);
             w.tag("text")
                 .attr("x", label_x)
                 .attr("y", r.y + r.h * 0.5 + 4.0)
@@ -1521,8 +1518,9 @@ impl Skin for AvionicsSkin {
                 screw(w, r.right() - 4.0, r.bottom() - 4.0, 1.5, 120.0);
             }
 
-            let box_sz = (r.h - 14.0).clamp(14.0, 18.0);
-            let box_x = r.x + 8.0;
+            let pad = 6.0;
+            let box_sz = (r.h - 2.0 * pad).clamp(12.0, 15.0);
+            let box_x = r.x + pad;
             let lamp_r = (box_sz * 0.34).clamp(3.2, 5.0);
             indicator_lamp(
                 w,
@@ -1533,14 +1531,10 @@ impl Skin for AvionicsSkin {
                 lamp_r,
             );
 
-            let label_x = box_x + box_sz + 6.0;
-            let avail_w = (r.right() - label_x - 5.0).max(20.0);
-            let (raw_lbl, f_sz) = if avail_w >= 148.0 {
-                ("Dyslexia-friendly font", 11.5)
-            } else {
-                ("Dyslexia font", 11.0)
-            };
-            let lbl = fit_box(raw_lbl, avail_w, f_sz);
+            let label_x = box_x + box_sz + pad;
+            let avail_w = (r.right() - label_x - pad).max(16.0);
+            let (raw_lbl, f_sz) = ("Dyslexia font", 11.0);
+            let lbl = fit_box(raw_lbl, avail_w + 16.0, f_sz);
             w.tag("text")
                 .attr("x", label_x)
                 .attr("y", r.y + r.h * 0.5 + 4.0)
@@ -2628,5 +2622,42 @@ mod tests {
             card_filters[0], card_filters[1],
             "adjacent riveted sub-plates must use distinct brush filter variants"
         );
+    }
+
+    #[test]
+    fn c2_font_switch_enforces_6px_internal_padding_and_compact_label() {
+        let opts = [
+            SelectorOption {
+                id: "crt",
+                label: "CRT",
+                badge: None,
+                tone: SemanticTone::Neutral,
+            },
+            SelectorOption {
+                id: "dyslexic",
+                label: "Dyslexia font",
+                badge: None,
+                tone: SemanticTone::Pass,
+            },
+        ];
+        let sel = Selector {
+            control_id: "c2-font-switch",
+            label: "Use dyslexia-friendly font",
+            rect: Rect::new(100.0, 10.0, 114.0, 26.0),
+            action: SwitchAction::Maintained,
+            options: &opts,
+            selected: 1,
+            pulled: false,
+            horizontal: true,
+        };
+        for skin in [&WireframeSkin as &dyn Skin, &AvionicsSkin::default()] {
+            let mut w = SvgWriter::document(240.0, 48.0);
+            skin.selector(&mut w, &sel);
+            let svg = w.finish_closing();
+            assert!(svg.contains(">Dyslexia font</text>"));
+            assert!(!svg.contains("Dyslexia-friendly font</text>"));
+            // r.x = 100.0, pad = 6.0 => box_x = 106, box_sz = 14 => label_x = 126
+            assert!(svg.contains("x=\"126\""));
+        }
     }
 }
