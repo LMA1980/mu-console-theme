@@ -54,15 +54,25 @@ pub fn color_tokens() -> Vec<(&'static str, &'static str)> {
 #[must_use]
 pub fn font_faces(font: &CrtFontMetrics, base_url: &str, query: &str) -> String {
     let mut s = String::new();
+    let bold = font.bold_file.unwrap_or(font.regular_file);
     let _ = writeln!(
         s,
         "@font-face{{font-family:{CRT_FAMILY_ALIAS};font-weight:400;font-display:block;src:url(\"{base_url}/{}.woff2{query}\") format(\"woff2\")}}",
         font.regular_file
     );
-    let bold = font.bold_file.unwrap_or(font.regular_file);
     let _ = writeln!(
         s,
         "@font-face{{font-family:{CRT_FAMILY_ALIAS};font-weight:700;font-display:block;src:url(\"{base_url}/{bold}.woff2{query}\") format(\"woff2\")}}"
+    );
+    let _ = writeln!(
+        s,
+        "@font-face{{font-family:\"{}\";font-weight:400;font-display:block;src:url(\"{base_url}/{}.woff2{query}\") format(\"woff2\")}}",
+        font.family, font.regular_file
+    );
+    let _ = writeln!(
+        s,
+        "@font-face{{font-family:\"{}\";font-weight:700;font-display:block;src:url(\"{base_url}/{bold}.woff2{query}\") format(\"woff2\")}}",
+        font.family
     );
     let _ = writeln!(
         s,
@@ -125,13 +135,16 @@ mod tests {
     fn font_faces_bind_aliases() {
         let h = font_faces(&HURMIT, "/fonts", "?v=abc");
         assert!(h.contains("MuCRT;font-weight:400;font-display:block"));
+        assert!(h.contains("\"Hurmit Nerd Font Mono\";font-weight:400;font-display:block"));
+        assert!(h.contains("\"Hurmit Nerd Font Mono\";font-weight:700;font-display:block"));
         assert!(h.contains("/fonts/HurmitNerdFontMono-Bold.woff2?v=abc"));
         assert!(h.contains("MuEtch;font-display:swap"));
         let d = font_faces(&OPEN_DYSLEXIC, "/fonts", "");
-        // No bold weight: both faces use the regular file.
+        assert!(d.contains("\"OpenDyslexicM Nerd Font Mono\";font-weight:400;font-display:block"));
+        // No bold weight: both MuCRT and concrete family faces use the regular file (4 total).
         assert_eq!(
             d.matches("OpenDyslexicMNerdFontMono-Regular.woff2").count(),
-            2
+            4
         );
     }
 }
