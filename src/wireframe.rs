@@ -173,7 +173,7 @@ impl Skin for WireframeSkin {
                 .attr("y", r.y)
                 .attr("width", r.w)
                 .attr("height", r.h)
-                .attr("rx", (r.h * 0.45).min(12.0))
+                .attr("rx", 6.0)
                 .attr("fill", bg)
                 .attr("stroke", border)
                 .attr("stroke-width", 1.5)
@@ -181,7 +181,7 @@ impl Skin for WireframeSkin {
 
             // Checkbox / switch indicator box on the left with 6px padding.
             let pad = 6.0;
-            let box_sz = (r.h - 2.0 * pad).clamp(12.0, 15.0);
+            let box_sz = (r.h - 2.0 * pad).clamp(12.0, 14.0);
             let box_x = r.x + pad;
             let box_y = r.y + (r.h - box_sz) * 0.5;
             w.tag("rect")
@@ -189,16 +189,16 @@ impl Skin for WireframeSkin {
                 .attr("y", box_y)
                 .attr("width", box_sz)
                 .attr("height", box_sz)
-                .attr("rx", 4.0)
+                .attr("rx", 3.0)
                 .attr("fill", if dyslexic_on { COLOR_PASS } else { BG_SCREEN })
                 .attr("stroke", if dyslexic_on { COLOR_PASS } else { "#6e8299" })
                 .attr("stroke-width", 1.5)
                 .end();
             if dyslexic_on {
                 let ck = PathData::new()
-                    .m(box_x + 3.5, box_y + box_sz * 0.52)
-                    .l(box_x + box_sz * 0.42, box_y + box_sz - 3.5)
-                    .l(box_x + box_sz - 3.0, box_y + 3.5)
+                    .m(box_x + box_sz * 0.22, box_y + box_sz * 0.52)
+                    .l(box_x + box_sz * 0.44, box_y + box_sz * 0.76)
+                    .l(box_x + box_sz * 0.78, box_y + box_sz * 0.24)
                     .build();
                 w.tag("path")
                     .attr("d", ck)
@@ -209,12 +209,15 @@ impl Skin for WireframeSkin {
             }
 
             let label_x = box_x + box_sz + pad;
-            let avail_w = (r.right() - label_x - pad).max(16.0);
-            let (raw_lbl, f_sz) = ("Dyslexia font", 11.0);
-            let lbl = fit_box(raw_lbl, avail_w + 16.0, f_sz);
+            let avail_w = (r.right() - label_x - pad - 1.5).max(16.0);
+            let f_sz = if dyslexic_on { 9.5 } else { 11.0 };
+            let text_len = avail_w.min(88.0);
+            let lbl = fit_box("Dyslexia font", avail_w + 18.0, 11.0);
             w.tag("text")
                 .attr("x", label_x)
-                .attr("y", r.y + r.h * 0.5 + 4.0)
+                .attr("y", r.y + r.h * 0.5 + 3.8)
+                .attr("textLength", text_len)
+                .attr("lengthAdjust", "spacing")
                 .attr(
                     "fill",
                     if dyslexic_on {
@@ -1508,7 +1511,7 @@ impl Skin for AvionicsSkin {
                 .attr("y", r.y)
                 .attr("width", r.w)
                 .attr("height", r.h)
-                .attr("rx", 4.0)
+                .attr("rx", 6.0)
                 .attr("fill", url(ids::PARKERIZED))
                 .attr("stroke", border)
                 .attr("stroke-width", 1.4)
@@ -1519,7 +1522,7 @@ impl Skin for AvionicsSkin {
             }
 
             let pad = 6.0;
-            let box_sz = (r.h - 2.0 * pad).clamp(12.0, 15.0);
+            let box_sz = (r.h - 2.0 * pad).clamp(12.0, 14.0);
             let box_x = r.x + pad;
             let lamp_r = (box_sz * 0.34).clamp(3.2, 5.0);
             indicator_lamp(
@@ -1532,12 +1535,15 @@ impl Skin for AvionicsSkin {
             );
 
             let label_x = box_x + box_sz + pad;
-            let avail_w = (r.right() - label_x - pad).max(16.0);
-            let (raw_lbl, f_sz) = ("Dyslexia font", 11.0);
-            let lbl = fit_box(raw_lbl, avail_w + 16.0, f_sz);
+            let avail_w = (r.right() - label_x - pad - 1.5).max(16.0);
+            let f_sz = if dyslexic_on { 9.5 } else { 11.0 };
+            let text_len = avail_w.min(88.0);
+            let lbl = fit_box("Dyslexia font", avail_w + 18.0, 11.0);
             w.tag("text")
                 .attr("x", label_x)
-                .attr("y", r.y + r.h * 0.5 + 4.0)
+                .attr("y", r.y + r.h * 0.5 + 3.8)
+                .attr("textLength", text_len)
+                .attr("lengthAdjust", "spacing")
                 .attr("fill", if dyslexic_on { "#b8ffb0" } else { "#e6dcc8" })
                 .attr("font-family", "MuCRT, monospace")
                 .attr("font-size", f_sz)
@@ -2643,7 +2649,7 @@ mod tests {
         let sel = Selector {
             control_id: "c2-font-switch",
             label: "Use dyslexia-friendly font",
-            rect: Rect::new(100.0, 10.0, 114.0, 26.0),
+            rect: Rect::new(100.0, 10.0, 120.0, 24.0),
             action: SwitchAction::Maintained,
             options: &opts,
             selected: 1,
@@ -2656,8 +2662,10 @@ mod tests {
             let svg = w.finish_closing();
             assert!(svg.contains(">Dyslexia font</text>"));
             assert!(!svg.contains("Dyslexia-friendly font</text>"));
-            // r.x = 100.0, pad = 6.0 => box_x = 106, box_sz = 14 => label_x = 126
-            assert!(svg.contains("x=\"126\""));
+            // r.x = 100.0, pad = 6.0 => box_x = 106, box_sz = 12 (for h=24) => label_x = 124
+            assert!(svg.contains("x=\"124\""));
+            assert!(svg.contains("textLength=\"88\""));
+            assert!(svg.contains("lengthAdjust=\"spacing\""));
         }
     }
 }
