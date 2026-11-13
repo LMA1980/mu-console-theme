@@ -10,7 +10,9 @@
 //!   the keyboard. They spring back to rest on release.
 
 use crate::instruments::switch::SwitchAction;
-use crate::tokens::switch::PULL_HOLD_MS;
+
+/// Press-and-hold duration before a [`SwitchAction::PullToTurn`] switch may activate (ms).
+pub const PULL_HOLD_MS: u32 = 300;
 
 /// Input event. Timestamps are monotonic milliseconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

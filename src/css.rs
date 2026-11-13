@@ -1,56 +1,34 @@
 // SPDX-License-Identifier: LGPL-3.0-only WITH LGPL-3.0-linking-exception
 //! Generated `tokens.css`: colour custom properties and `@font-face` rules.
 
-use crate::metrics::{heavy_data, CrtFontMetrics, CRT_FAMILY_ALIAS, ETCH_FAMILY_ALIAS};
-use crate::tokens::{
-    chrome, emboss, etch, indicator, lamp, lcd, punch, switch, tungsten, wood, CRT_CD, CRT_CI,
-};
+use crate::metrics::{CrtFontMetrics, CRT_FAMILY_ALIAS};
+use crate::tokens::{chrome, wireframe};
 use std::fmt::Write as _;
 
 /// Every exported colour token as `(css-name, value)`.
 #[must_use]
 pub fn color_tokens() -> Vec<(&'static str, &'static str)> {
     vec![
-        ("mat-wood", wood::BASE),
-        ("mat-wood-grain", wood::GRAIN),
-        ("mat-wood-figure", wood::FIGURE),
-        ("mat-wood-pores", wood::PORES),
-        ("mat-tungsten-top", tungsten::TOP),
-        ("mat-tungsten-bottom", tungsten::BOTTOM),
-        ("mat-bevel-light", tungsten::BEVEL_LIGHT),
-        ("mat-bevel-dark", tungsten::BEVEL_DARK),
         ("mat-dark-slate", chrome::DARK_SLATE),
         ("accent-neon-cyan", chrome::NEON_CYAN),
         ("color-green-glow", chrome::GREEN_GLOW),
-        ("ink-etch-face", etch::FACE),
-        ("ink-etch-recess", etch::RECESS),
-        ("ink-etch-lip", etch::LIP),
-        ("ink-emboss-face", emboss::FACE),
-        ("ink-emboss-lip", emboss::LIP),
-        ("ink-emboss-shadow", emboss::SHADOW),
-        ("mat-punch", punch::HOLE),
-        ("crt-ci-lit", CRT_CI.lit),
-        ("crt-ci-dim", CRT_CI.dim),
-        ("crt-cd-lit", CRT_CD.lit),
-        ("crt-cd-dim", CRT_CD.dim),
-        ("lcd-backlight-top", lcd::BACKLIGHT_TOP),
-        ("lcd-backlight-bottom", lcd::BACKLIGHT_BOTTOM),
-        ("lcd-pixel", lcd::PIXEL),
-        ("mat-switch-legend", switch::LEGEND),
-        ("mat-switch-collar", switch::PULL_COLLAR),
-        ("lamp-red", indicator::RED),
-        ("lamp-green", indicator::GREEN),
-        ("lamp-amber", indicator::AMBER),
-        ("lamp-ok", lamp::OK),
-        ("lamp-caution", lamp::CAUTION),
-        ("lamp-warning", lamp::WARNING),
-        ("lamp-off", lamp::OFF),
+        ("bg-canvas", wireframe::BG_CANVAS),
+        ("bg-panel", wireframe::BG_PANEL),
+        ("bg-screen", wireframe::BG_SCREEN),
+        ("bg-control", wireframe::BG_CONTROL),
+        ("border-wireframe", wireframe::BORDER),
+        ("text-primary", wireframe::TEXT_PRIMARY),
+        ("text-muted", wireframe::TEXT_MUTED),
+        ("status-pass", wireframe::PASS),
+        ("status-warn", wireframe::WARN),
+        ("status-fail", wireframe::FAIL),
+        ("status-info", wireframe::INFO),
     ]
 }
 
 /// `@font-face` binding the CRT alias to `font` (`font-display: block`, so
-/// terminals never flash a fallback) and the etch alias to HeavyData
-/// (`swap`). `query` is the `?v=<hash>` cache-busting suffix (may be empty).
+/// terminals never flash a fallback). `query` is the `?v=<hash>` cache-busting
+/// suffix (may be empty).
 #[must_use]
 pub fn font_faces(font: &CrtFontMetrics, base_url: &str, query: &str) -> String {
     let mut s = String::new();
@@ -74,11 +52,6 @@ pub fn font_faces(font: &CrtFontMetrics, base_url: &str, query: &str) -> String 
         "@font-face{{font-family:\"{}\";font-weight:700;font-display:block;src:url(\"{base_url}/{bold}.woff2{query}\") format(\"woff2\")}}",
         font.family
     );
-    let _ = writeln!(
-        s,
-        "@font-face{{font-family:{ETCH_FAMILY_ALIAS};font-display:swap;src:url(\"{base_url}/{}.woff2{query}\") format(\"woff2\")}}",
-        heavy_data::FILE
-    );
     s
 }
 
@@ -90,7 +63,7 @@ pub fn tokens_css() -> String {
         let _ = write!(s, "--{name}:{value};");
     }
     s.push_str("}\n");
-    s.push_str("html,body{margin:0;padding:0;height:100vh;overflow:hidden;height:100dvh;background:var(--mat-wood)}\n");
+    s.push_str("html,body{margin:0;padding:0;height:100vh;overflow:hidden;height:100dvh;background:var(--mat-dark-slate)}\n");
     s.push_str("#muconsole-shell{display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden;margin:0;padding:0}\n");
     s.push_str("#muconsole-header{display:flex;flex-direction:row;align-items:center;justify-content:flex-start;height:48px;background:var(--mat-dark-slate);border-bottom:1px solid var(--accent-neon-cyan);gap:12px;padding:0 16px;box-sizing:border-box;flex-shrink:0}\n");
     s.push_str(".skip-link{position:absolute;top:-9999px;left:-9999px}\n");
@@ -116,8 +89,9 @@ mod tests {
     #[test]
     fn css_contains_tokens_and_invariant() {
         let css = tokens_css();
-        assert!(css.contains("--crt-ci-lit:#4dff7a;"));
-        assert!(css.contains("--lamp-red:#ff3b30;"));
+        assert!(css.contains("--mat-dark-slate:#0e1116;"));
+        assert!(css.contains("--accent-neon-cyan:#00f0ff;"));
+        assert!(css.contains("background:var(--mat-dark-slate)"));
         assert!(css.contains("overflow:hidden;height:100dvh"));
         assert_eq!(css, tokens_css(), "deterministic");
     }
@@ -138,7 +112,7 @@ mod tests {
         assert!(h.contains("\"Hurmit Nerd Font Mono\";font-weight:400;font-display:block"));
         assert!(h.contains("\"Hurmit Nerd Font Mono\";font-weight:700;font-display:block"));
         assert!(h.contains("/fonts/HurmitNerdFontMono-Bold.woff2?v=abc"));
-        assert!(h.contains("MuEtch;font-display:swap"));
+        assert_eq!(h.matches("@font-face").count(), 4);
         let d = font_faces(&OPEN_DYSLEXIC, "/fonts", "");
         assert!(d.contains("\"OpenDyslexicM Nerd Font Mono\";font-weight:400;font-display:block"));
         // No bold weight: both MuCRT and concrete family faces use the regular file (4 total).

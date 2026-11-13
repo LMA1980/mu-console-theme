@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2021"
 authors = ["LMA1980"]
 repository = "https://github.com/LMA1980/mu-console-theme"
-description = "MuConsole 'Avionics Terminal' theme: material tokens, 5x7 LCD glyphs, Nerd icon table, font metrics and a dependency-free SVG instrument library"
+description = "MuConsole Wireframe theme: CSS/SVG colour tokens, Nerd icon table, font metrics, and WireframeSkin SVG renderer"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
 
 [lib]
