@@ -3,7 +3,6 @@
 //!
 //! ```text
 //! mu-console-subset-unicodes crt            # U+0020-007E,...,U+F418
-//! mu-console-subset-unicodes etch
 //! mu-console-subset-unicodes crt --required # one hex code point per line
 //! ```
 
@@ -13,7 +12,7 @@ use std::process::ExitCode;
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(profile) = args.first().and_then(|a| SubsetProfile::parse(a)) else {
-        eprintln!("usage: mu-console-subset-unicodes <crt|etch> [--required]");
+        eprintln!("usage: mu-console-subset-unicodes crt [--required]");
         return ExitCode::from(2);
     };
     if args.iter().any(|a| a == "--required") {

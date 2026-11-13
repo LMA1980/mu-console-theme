@@ -152,18 +152,14 @@ pub enum SubsetProfile {
     /// CRT terminal fonts (Hurmit, OpenDyslexicM): Latin-1, punctuation,
     /// box drawing, block elements, geometric shapes, state glyphs and icons.
     Crt,
-    /// Etched / embossed plate labels (HeavyData): uppercase, digits,
-    /// punctuation and ▲▼•.
-    Etch,
 }
 
 impl SubsetProfile {
-    /// Parse `crt` / `etch`.
+    /// Parse `crt`.
     #[must_use]
     pub fn parse(s: &str) -> Option<Self> {
         match s {
             "crt" => Some(Self::Crt),
-            "etch" => Some(Self::Etch),
             _ => None,
         }
     }
@@ -179,29 +175,17 @@ pub const CRT_RANGES: &[(u32, u32)] = &[
     (0x25A0, 0x25FF), // geometric shapes (where the font has them)
 ];
 
-/// Inclusive code point ranges of the HeavyData etch subset.
-pub const ETCH_RANGES: &[(u32, u32)] = &[
-    (0x0020, 0x0040), // space, punctuation, digits, @
-    (0x0041, 0x005A), // A-Z
-    (0x005B, 0x0060), // [ \ ] ^ _ `
-    (0x2022, 0x2022), // •
-    (0x25B2, 0x25B2), // ▲
-    (0x25BC, 0x25BC), // ▼
-];
-
 /// Expand the profile into a sorted, de-duplicated list of code points.
 #[must_use]
 pub fn subset_codepoints(profile: SubsetProfile) -> Vec<u32> {
     let mut out: Vec<u32> = Vec::new();
-    let ranges = match profile {
-        SubsetProfile::Crt => CRT_RANGES,
-        SubsetProfile::Etch => ETCH_RANGES,
-    };
-    for &(lo, hi) in ranges {
-        out.extend(lo..=hi);
-    }
-    if profile == SubsetProfile::Crt {
-        out.extend(ICONS.iter().map(|i| i.codepoint()));
+    match profile {
+        SubsetProfile::Crt => {
+            for &(lo, hi) in CRT_RANGES {
+                out.extend(lo..=hi);
+            }
+            out.extend(ICONS.iter().map(|i| i.codepoint()));
+        }
     }
     out.sort_unstable();
     out.dedup();
@@ -248,11 +232,6 @@ pub fn required_codepoints(profile: SubsetProfile) -> Vec<u32> {
             v.extend([0x2026, 0x2500, 0x2550, 0x256D, 0x2570]);
             v
         }
-        SubsetProfile::Etch => {
-            let mut v: Vec<u32> = (u32::from('A')..=u32::from('Z')).collect();
-            v.extend(u32::from('0')..=u32::from('9'));
-            v
-        }
     }
 }
 
@@ -289,24 +268,21 @@ mod tests {
 
     #[test]
     fn subsets_contain_required() {
-        for p in [SubsetProfile::Crt, SubsetProfile::Etch] {
-            let all = subset_codepoints(p);
-            for cp in required_codepoints(p) {
-                assert!(all.binary_search(&cp).is_ok(), "{p:?} missing U+{cp:04X}");
-            }
+        let all = subset_codepoints(SubsetProfile::Crt);
+        for cp in required_codepoints(SubsetProfile::Crt) {
+            assert!(all.binary_search(&cp).is_ok(), "Crt missing U+{cp:04X}");
         }
     }
 
     #[test]
     fn unicode_list_is_compact_ranges() {
-        let s = pyftsubset_unicodes(SubsetProfile::Etch);
-        assert_eq!(s, "U+0020-0060,U+2022,U+25B2,U+25BC");
         let crt = pyftsubset_unicodes(SubsetProfile::Crt);
         assert!(crt.starts_with("U+0020-007E,U+00A0-00FF,"));
         assert!(crt.contains("U+E0A0"));
         assert!(crt.contains("U+F418"));
         assert!(!crt.contains(' '));
         assert_eq!(SubsetProfile::parse("crt"), Some(SubsetProfile::Crt));
+        assert_eq!(SubsetProfile::parse("etch"), None);
         assert_eq!(SubsetProfile::parse("x"), None);
     }
 }

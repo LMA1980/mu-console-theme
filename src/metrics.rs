@@ -8,8 +8,6 @@
 /// CRT font. Instruments never name the concrete family, so the font switch
 /// only swaps the `@font-face` source.
 pub const CRT_FAMILY_ALIAS: &str = "MuCRT";
-/// CSS `font-family` alias bound to HeavyData for etched / embossed text.
-pub const ETCH_FAMILY_ALIAS: &str = "MuEtch";
 
 /// Metrics of a monospaced CRT font.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -48,16 +46,6 @@ pub const OPEN_DYSLEXIC: CrtFontMetrics = CrtFontMetrics {
 /// Every CRT font, default first.
 pub const CRT_FONTS: [CrtFontMetrics; 2] = [HURMIT, OPEN_DYSLEXIC];
 
-/// HeavyData Nerd Font (etched / embossed plate labels).
-pub mod heavy_data {
-    pub const FAMILY: &str = "HeavyData Nerd Font";
-    pub const FILE: &str = "HeavyDataNerdFont-Regular";
-    /// Cap height in em.
-    pub const CAP_HEIGHT_EM: f64 = 0.59;
-    /// Minimum rendered size in px (cap height ~6.5 px).
-    pub const MIN_SIZE_PX: f64 = 11.0;
-}
-
 /// Minimum CRT text size on desktop breakpoints (px).
 pub const CRT_FLOOR_DESKTOP_PX: f64 = 12.0;
 /// Minimum CRT text size on the phone breakpoint (px).
@@ -78,13 +66,11 @@ mod tests {
     fn spec_metrics() {
         assert!((HURMIT.advance_em - 0.618).abs() < 1e-9);
         assert!((OPEN_DYSLEXIC.advance_em - 0.732).abs() < 1e-9);
-        assert!((heavy_data::CAP_HEIGHT_EM - 0.59).abs() < 1e-9);
         // OpenDyslexicM is ~18 % wider, so the size shrinks ~16 %.
         let wider = OPEN_DYSLEXIC.advance_em / HURMIT.advance_em - 1.0;
         assert!((0.17..0.19).contains(&wider));
         let shrink = 1.0 - grid_scale(&OPEN_DYSLEXIC);
         assert!((0.15..0.165).contains(&shrink));
         assert!((grid_scale(&HURMIT) - 1.0).abs() < 1e-12);
-        const { assert!(heavy_data::MIN_SIZE_PX * heavy_data::CAP_HEIGHT_EM > 6.0) };
     }
 }

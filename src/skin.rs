@@ -167,7 +167,7 @@ pub struct Screen<'a> {
 
 /// Pluggable visual skin for the console.
 pub trait Skin {
-    /// Identifier of this skin (`"wireframe"` or `"avionics"`).
+    /// Identifier of this skin (`"wireframe"`).
     fn name(&self) -> &'static str;
 
     /// Initialize canvas background and any shared definitions.

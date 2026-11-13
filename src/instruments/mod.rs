@@ -1,29 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-only WITH LGPL-3.0-linking-exception
-//! Pure generators for the instrument primitives.
-//!
-//! Every function appends SVG to a [`SvgWriter`] and depends only on its
-//! arguments, so output is deterministic. Instruments reference the shared
-//! definitions written by [`crate::defs::write_defs`].
-//!
-//! | Primitive | Function |
-//! |---|---|
-//! | Cabinet-scale wood veneer | [`surface::wood`] |
-//! | Tungsten plate (brushed + sheen + bevel + holes) | [`surface::plate`] |
-//! | Etched / embossed text | [`text::etched`], [`text::embossed`] |
-//! | STN LCD window | [`lcd_window::lcd`] |
-//! | Pistol-grip control switch | [`switch::pistol_switch`] |
-//! | Indicating lamp | [`switch::indicator_lamp`] |
-//! | Annunciator | [`annunciator::annunciator`] |
-//! | CRT pipeline | [`crt::crt`] |
-//! | Concentric rotary | [`rotary::rotary`] |
+//! Shared geometry and control-action primitives for [`crate::wireframe::WireframeSkin`].
 
-pub mod annunciator;
-pub mod crt;
-pub mod lcd_window;
-pub mod rotary;
-pub mod surface;
 pub mod switch;
-pub mod text;
 
 /// Axis-aligned rectangle in CSS px.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -61,13 +39,3 @@ impl Rect {
         )
     }
 }
-
-/// Point on a circle; `deg` is measured clockwise from +x (SVG convention).
-#[must_use]
-pub(crate) fn polar(cx: f64, cy: f64, r: f64, deg: f64) -> (f64, f64) {
-    let rad = deg.to_radians();
-    (cx + r * rad.cos(), cy + r * rad.sin())
-}
-
-#[cfg(test)]
-mod tests;
