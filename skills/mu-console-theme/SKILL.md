@@ -1,16 +1,18 @@
-______________________________________________________________________
+---
+name: mu-console-theme
+description: "Skin-agnostic ConsoleScene/DialogModel descriptors, HtmlCoreSkin, WireframeSkin, CSS tokens, Nerd glyphs, and font metrics for MuConsole."
+---
 
-## name: mu-console-theme description: "Wireframe theme tokens, Nerd icon glyphs, font metrics, and SVG primitives for MuConsole."
+# `mu-console-theme` Design Tokens, `HtmlCoreSkin` & `WireframeSkin`
 
-# `mu-console-theme` Design Tokens & `WireframeSkin` Library
-
-Use this skill when developing or testing visual presentation, Wireframe SVG rendering, typography metrics, and CSS tokens across MuConsole.
+Use this skill when developing or testing skin-agnostic scene descriptors, semantic HTML5 rendering, Wireframe SVG rendering, typography metrics, and CSS tokens across MuConsole.
 
 ## 1. Design System & Styling Invariants
 
-- **Color & Surface Tokens**: Dark-slate canvas, cyan accent, wireframe panels, and semantic status tones are defined in `mu_console_theme::tokens` and generated via `mu_console_theme::css::tokens_css()`.
-- **CSS Delivery**: Use `:root` CSS variables and shell rules defined in `dist/tokens.css` or `assets/tokens.css` for console views.
-- **Wireframe SVG Renderer**: Render controls, selectors, rotaries, lamps, readouts, and trainway screens cleanly using `mu_console_theme::wireframe::WireframeSkin` and `mu_console_theme::svg::SvgWriter`.
+- **Scene & Modal Descriptors**: Define views via `mu_console_theme::scene::{ConsoleScene, DialogModel, SceneRenderer}` across both `HtmlCoreSkin` and `WireframeSkin` so action routing, disabled controls, and ARIA semantics stay identical.
+- **HtmlCoreSkin (`data-skin="html"`)**: Emit semantic HTML5 via void-aware `mu_console_theme::html::{HtmlWriter, HtmlCoreSkin}` with `<dialog>` modals, natural scrolling (`overflow-y: auto`), responsive grids, and `font-size: 16px` mobile inputs.
+- **WireframeSkin (`data-skin="wireframe"`)**: Emit bounded, deterministic flat-fill SVG via `mu_console_theme::wireframe::WireframeSkin` and `mu_console_theme::svg::SvgWriter` (fixed `100dvh`, zero filters, strict viewport containment).
+- **Color & Surface Tokens**: Dark-slate canvas, cyan accent, wireframe panels, disabled tokens, and semantic status tones live in `mu_console_theme::tokens` / `mu_console_theme::css::tokens_css()` (synchronized to `assets/tokens.css` and `dist/tokens.css`).
 - **Nerd Font Icons**: Use `mu_console_theme::glyphs` for CRT icon codepoints and font subsetting (`crt` profile for `Hurmit` and `OpenDyslexicM`).
 
 ## 2. Command-Line Utilities

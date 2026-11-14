@@ -13,18 +13,27 @@
 
 use crate::instruments::switch::SwitchAction;
 use crate::instruments::Rect;
+use crate::scene::{
+    ActionControl, ConsoleScene, DialogModel, GateChecklist, InviteCreatedOnceDialog,
+    KeyValueEntry, KeyValueList, LogViewer, Pagination, PasskeyEnrollmentDialog, PlatformPanel,
+    RiskConfirmDialog, SceneComponent, SceneRenderer, SceneSection, SceneViewport,
+    SessionRolesDialog, SparklineCard, StatusMatrix, TableGrid, TrainwayGraph, UserProfileDialog,
+};
 use crate::skin::{
     Lamp, Panel, Readout, Rotary, Screen, ScreenTrack, Selector, SemanticTone, SignalGlyph, Skin,
 };
-use crate::svg::{PathData, SvgWriter};
+use crate::svg::{sparkline_path, PathData, SvgWriter};
 
 pub const BG_CANVAS: &str = "#0e1116";
 pub const BG_PANEL: &str = "#141922";
 pub const BG_SCREEN: &str = "#090c10";
 pub const BG_CONTROL: &str = "#1b2230";
+pub use crate::tokens::wireframe::BG_DISABLED;
 pub const BORDER: &str = "#2b3440";
+pub use crate::tokens::wireframe::BORDER_DISABLED;
 pub const TEXT_PRIMARY: &str = "#e6edf3";
 pub const TEXT_MUTED: &str = "#8b949e";
+pub use crate::tokens::wireframe::TEXT_DISABLED;
 pub const COLOR_PASS: &str = "#33f08a";
 pub const COLOR_WARN: &str = "#ffb43a";
 pub const COLOR_FAIL: &str = "#ff4d4d";
@@ -217,7 +226,7 @@ impl Skin for WireframeSkin {
 
         let role = match s.action {
             SwitchAction::Maintained => "radiogroup",
-            SwitchAction::SpringReturn | SwitchAction::PullToTurn => "group",
+            SwitchAction::SpringReturn => "group",
         };
         w.tag("g")
             .attr("data-control-id", s.control_id)
@@ -235,22 +244,8 @@ impl Skin for WireframeSkin {
             .attr("width", r.w)
             .attr("height", r.h)
             .attr("rx", 5.0)
-            .attr(
-                "fill",
-                if s.action == SwitchAction::PullToTurn {
-                    "#261c14"
-                } else {
-                    BG_CONTROL
-                },
-            )
-            .attr(
-                "stroke",
-                if s.pulled || s.action == SwitchAction::PullToTurn {
-                    COLOR_WARN
-                } else {
-                    BORDER
-                },
-            )
+            .attr("fill", BG_CONTROL)
+            .attr("stroke", BORDER)
             .attr("stroke-width", 1.2)
             .end();
 
@@ -275,11 +270,7 @@ impl Skin for WireframeSkin {
                 BORDER
             };
             let fill = if active {
-                if s.action == SwitchAction::PullToTurn && i == 1 {
-                    "#3b2314"
-                } else {
-                    "#1f3452"
-                }
+                "#1f3452"
             } else if is_button_group {
                 "#182232"
             } else {
@@ -1331,7 +1322,8 @@ fn draw_tracks_compact(w: &mut SvgWriter, r: Rect, stations: &[&str], tracks: &[
             .end();
 
         for &(st_idx, glyph, tone) in tr.signals {
-            let sx = left + f64::from(st_idx) * span;
+            let clamped = st_idx.min(u32::try_from(n_st.saturating_sub(1)).unwrap_or(0));
+            let sx = left + f64::from(clamped) * span;
             render_signal_shape(w, sx, y, glyph, tone);
         }
     }
@@ -1419,6 +1411,1461 @@ fn render_signal_shape(
     }
 }
 
+fn clamp_rect(r: Rect, vp: SceneViewport) -> Rect {
+    let x = r.x.clamp(0.0, vp.width);
+    let y = r.y.clamp(0.0, vp.height);
+    let w = r.w.max(0.0).min((vp.width - x).max(0.0));
+    let h = r.h.max(0.0).min((vp.height - y).max(0.0));
+    Rect::new(x, y, w, h)
+}
+
+fn draw_wf_box(
+    w: &mut SvgWriter,
+    r: Rect,
+    vp: SceneViewport,
+    rx: f64,
+    fill: &str,
+    stroke: &str,
+    stroke_w: f64,
+) -> Rect {
+    let cr = clamp_rect(r, vp);
+    w.tag("rect")
+        .attr("x", cr.x)
+        .attr("y", cr.y)
+        .attr("width", cr.w)
+        .attr("height", cr.h)
+        .attr("rx", rx)
+        .attr("fill", fill)
+        .attr("stroke", stroke)
+        .attr("stroke-width", stroke_w)
+        .end();
+    cr
+}
+
+fn emit_wf_text(
+    w: &mut SvgWriter,
+    bounds: (f64, f64, f64),
+    font_px: f64,
+    fill: &str,
+    bold: bool,
+    text: &str,
+) {
+    let (x, y, max_w) = bounds;
+    if max_w < 8.0 {
+        return;
+    }
+    let fitted = fit_box(text, max_w, font_px);
+    let mut t = w
+        .tag("text")
+        .attr("x", x)
+        .attr("y", y)
+        .attr("fill", fill)
+        .attr("font-family", "MuCRT, monospace")
+        .attr("font-size", font_px);
+    if bold {
+        t = t.attr("font-weight", "bold");
+    }
+    t.text(&fitted);
+}
+
+fn draw_wf_text(
+    w: &mut SvgWriter,
+    x: f64,
+    y: f64,
+    max_w: f64,
+    font_px: f64,
+    fill: &str,
+    text: &str,
+) {
+    emit_wf_text(w, (x, y, max_w), font_px, fill, false, text);
+}
+
+fn draw_wf_bold(
+    w: &mut SvgWriter,
+    x: f64,
+    y: f64,
+    max_w: f64,
+    font_px: f64,
+    fill: &str,
+    text: &str,
+) {
+    emit_wf_text(w, (x, y, max_w), font_px, fill, true, text);
+}
+
+fn draw_wf_button(w: &mut SvgWriter, r: Rect, ctrl: &ActionControl, role: &str, vp: SceneViewport) {
+    let cr = clamp_rect(r, vp);
+    let g = w
+        .tag("g")
+        .attr("role", role)
+        .attr("data-bbox-x", cr.x)
+        .attr("data-bbox-y", cr.y)
+        .attr("data-bbox-w", cr.w)
+        .attr("data-bbox-h", cr.h);
+    let mut g = ctrl.fold_attrs(g, |b, k, v| b.attr(k, v));
+    if ctrl.aria_label.is_none() {
+        g = g.attr("aria-label", ctrl.accessible_label());
+    }
+    if ctrl.disabled {
+        g = g.attr("disabled", "disabled");
+    } else {
+        g = g.attr("tabindex", 0_u32);
+    }
+    g.open();
+
+    let (fill, stroke, text_fill) = if ctrl.disabled {
+        (BG_DISABLED, BORDER_DISABLED, TEXT_DISABLED)
+    } else if ctrl.selected == Some(true) || ctrl.pressed == Some(true) {
+        ("#1f3452", ctrl.tone.wireframe_stroke(), TEXT_PRIMARY)
+    } else {
+        (BG_CONTROL, ctrl.tone.wireframe_stroke(), TEXT_PRIMARY)
+    };
+    draw_wf_box(w, cr, vp, 4.0, fill, stroke, 1.0);
+    if cr.h >= 12.0 && cr.w >= 14.0 {
+        let label = match &ctrl.badge {
+            Some(b) => format!("{} ({b})", ctrl.label),
+            None => ctrl.label.clone(),
+        };
+        draw_wf_text(
+            w,
+            cr.x + 5.0,
+            cr.y + cr.h * 0.5 + 3.5,
+            (cr.w - 8.0).max(8.0),
+            10.0,
+            text_fill,
+            &label,
+        );
+    }
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_action_strip(
+    w: &mut SvgWriter,
+    r: Rect,
+    controls: &[&ActionControl],
+    role: &str,
+    vp: SceneViewport,
+) {
+    if controls.is_empty() || r.w <= 4.0 || r.h <= 4.0 {
+        return;
+    }
+    let gap = 4.0;
+    let count = controls.len();
+    let btn_w = ((r.w - gap * (count.saturating_sub(1) as f64)) / count as f64).max(16.0);
+    for (idx, ctrl) in controls.iter().enumerate() {
+        let bx = (r.x + idx as f64 * (btn_w + gap)).min(r.right());
+        let avail_w = (r.right() - bx).max(0.0).min(btn_w);
+        draw_wf_button(w, Rect::new(bx, r.y, avail_w, r.h), ctrl, role, vp);
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_header(w: &mut SvgWriter, scene: &ConsoleScene, r: Rect, vp: SceneViewport) {
+    draw_wf_box(w, r, vp, 4.0, BG_PANEL, BORDER, 1.0);
+    let inner = r.inset(6.0, 5.0, 6.0, 5.0);
+    let row_h = if vp.is_phone() {
+        ((inner.h - 4.0) * 0.5).clamp(16.0, 32.0)
+    } else {
+        inner.h.clamp(16.0, 32.0)
+    };
+
+    let brand_w = (inner.w * 0.16).clamp(58.0, 120.0);
+    draw_wf_box(
+        w,
+        Rect::new(inner.x, inner.y, brand_w, row_h),
+        vp,
+        4.0,
+        "#1f3452",
+        COLOR_INFO,
+        1.0,
+    );
+    draw_wf_bold(
+        w,
+        inner.x + 6.0,
+        inner.y + row_h * 0.5 + 3.5,
+        brand_w - 10.0,
+        10.5,
+        TEXT_PRIMARY,
+        &scene.area_label,
+    );
+
+    let tab_x = inner.x + brand_w + 6.0;
+    let right_reserve = if vp.is_phone() {
+        0.0
+    } else {
+        (inner.w * 0.34).clamp(120.0, 340.0)
+    };
+    let tab_w = (inner.right() - tab_x - right_reserve).max(40.0);
+    if !scene.area_tabs.is_empty() {
+        let count = scene.area_tabs.len();
+        let gap = 4.0;
+        let cell_w = ((tab_w - gap * count.saturating_sub(1) as f64) / count as f64).max(16.0);
+        for (i, tab) in scene.area_tabs.iter().enumerate() {
+            let ctrl = tab.as_action_control();
+            let cx = tab_x + i as f64 * (cell_w + gap);
+            draw_wf_button(
+                w,
+                Rect::new(
+                    cx,
+                    inner.y,
+                    cell_w.min((tab_x + tab_w - cx).max(0.0)),
+                    row_h,
+                ),
+                &ctrl,
+                "tab",
+                vp,
+            );
+        }
+    }
+
+    let mut hdr_ctrls: Vec<&ActionControl> = Vec::new();
+    for lamp in &scene.status_lamps {
+        if let Some(act) = &lamp.action {
+            hdr_ctrls.push(act);
+        }
+    }
+    if let Some(ft) = &scene.font_toggle {
+        hdr_ctrls.push(ft);
+    }
+    for act in &scene.header_actions {
+        hdr_ctrls.push(act);
+    }
+    let ctrl_rect = if vp.is_phone() {
+        Rect::new(inner.x, inner.y + row_h + 4.0, inner.w, row_h)
+    } else {
+        let rx = (tab_x + tab_w + 6.0).min(inner.right());
+        Rect::new(rx, inner.y, (inner.right() - rx).max(0.0), row_h)
+    };
+    render_wf_action_strip(w, ctrl_rect, &hdr_ctrls, "button", vp);
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_subviews(w: &mut SvgWriter, scene: &ConsoleScene, r: Rect, vp: SceneViewport) {
+    draw_wf_box(w, r, vp, 4.0, BG_PANEL, BORDER, 1.0);
+    let inner = r.inset(6.0, 3.0, 6.0, 3.0);
+    let gap = 4.0;
+    let count = scene.subviews.len().max(1);
+    let cell_w = ((inner.w - gap * count.saturating_sub(1) as f64) / count as f64).max(16.0);
+    for (i, sv) in scene.subviews.iter().enumerate() {
+        let ctrl = sv.as_action_control();
+        let bx = inner.x + i as f64 * (cell_w + gap);
+        draw_wf_button(
+            w,
+            Rect::new(
+                bx,
+                inner.y,
+                cell_w.min((inner.right() - bx).max(0.0)),
+                inner.h,
+            ),
+            &ctrl,
+            "tab",
+            vp,
+        );
+    }
+}
+
+fn render_wf_repo_bar(w: &mut SvgWriter, scene: &ConsoleScene, r: Rect, vp: SceneViewport) {
+    let Some(repo) = &scene.repo_selector else {
+        return;
+    };
+    draw_wf_box(w, r, vp, 4.0, BG_PANEL, BORDER, 1.0);
+    w.tag("g")
+        .attr("data-control-id", &repo.control_id)
+        .attr("role", "group")
+        .attr("aria-label", "Repository selector")
+        .open();
+    let inner = r.inset(6.0, 3.0, 6.0, 3.0);
+    let btns_w = (inner.w * 0.45).clamp(110.0, 260.0);
+    let label_w = (inner.w - btns_w - 6.0).max(24.0);
+    let summary = format!(
+        "{} / {} ({}/{})",
+        repo.outer_label,
+        repo.inner_label,
+        repo.inner_index + 1,
+        repo.inner_total.max(1)
+    );
+    draw_wf_text(
+        w,
+        inner.x + 2.0,
+        inner.y + inner.h * 0.5 + 3.5,
+        label_w,
+        10.0,
+        TEXT_PRIMARY,
+        &summary,
+    );
+    let controls = [
+        &repo.prev_outer,
+        &repo.next_outer,
+        &repo.prev_inner,
+        &repo.next_inner,
+    ];
+    render_wf_action_strip(
+        w,
+        Rect::new(inner.x + label_w + 6.0, inner.y, btns_w, inner.h),
+        &controls,
+        "button",
+        vp,
+    );
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_status_matrix(w: &mut SvgWriter, m: &StatusMatrix, r: Rect, vp: SceneViewport) {
+    w.tag("g").attr("data-component-id", &m.id).open();
+    draw_wf_box(w, r, vp, 4.0, BG_SCREEN, BORDER, 1.0);
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 14.0,
+        r.w - 16.0,
+        10.5,
+        TEXT_MUTED,
+        &m.title,
+    );
+
+    let grid = r.inset(6.0, 20.0, 6.0, 6.0);
+    let count = m.cells.len();
+    if count > 0 && grid.h >= 14.0 {
+        let cols = if vp.is_phone() || grid.w < 260.0 {
+            1
+        } else {
+            2
+        }
+        .min(count);
+        let rows = count.div_ceil(cols);
+        let gap = 4.0;
+        let cw = ((grid.w - gap * (cols - 1) as f64) / cols as f64).max(12.0);
+        let ch = ((grid.h - gap * (rows - 1) as f64) / rows as f64).max(14.0);
+        for (idx, cell) in m.cells.iter().enumerate() {
+            let col = idx % cols;
+            let row = idx / cols;
+            let cr = Rect::new(
+                grid.x + col as f64 * (cw + gap),
+                grid.y + row as f64 * (ch + gap),
+                cw,
+                ch.min((grid.bottom() - (grid.y + row as f64 * (ch + gap))).max(0.0)),
+            );
+            draw_wf_box(w, cr, vp, 3.0, BG_PANEL, cell.tone.wireframe_stroke(), 1.0);
+            if let Some(sig) = cell.signal {
+                render_signal_shape(w, cr.x + 10.0, cr.y + cr.h * 0.5, sig, cell.tone);
+            }
+            let text_x = if cell.signal.is_some() {
+                cr.x + 20.0
+            } else {
+                cr.x + 6.0
+            };
+            let btn_w = if cell.action.is_some() {
+                (cr.w * 0.34).clamp(44.0, 86.0)
+            } else {
+                0.0
+            };
+            let text_w = (cr.right() - text_x - btn_w - 6.0).max(8.0);
+            draw_wf_text(
+                w,
+                text_x,
+                cr.y + cr.h * 0.5 + 3.5,
+                text_w,
+                10.0,
+                TEXT_PRIMARY,
+                &format!("{}: {}", cell.label, cell.value),
+            );
+            if let Some(act) = &cell.action {
+                draw_wf_button(
+                    w,
+                    Rect::new(
+                        cr.right() - btn_w - 3.0,
+                        cr.y + 3.0,
+                        btn_w,
+                        (cr.h - 6.0).max(10.0),
+                    ),
+                    act,
+                    "button",
+                    vp,
+                );
+            }
+        }
+    }
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_pagination(w: &mut SvgWriter, r: Rect, pg: &Pagination, vp: SceneViewport) {
+    if r.h < 12.0 {
+        return;
+    }
+    let btn_w = (r.w * 0.28).clamp(38.0, 72.0);
+    draw_wf_button(w, Rect::new(r.x, r.y, btn_w, r.h), &pg.prev, "button", vp);
+    draw_wf_text(
+        w,
+        r.x + btn_w + 6.0,
+        r.y + r.h * 0.5 + 3.5,
+        (r.w - btn_w * 2.0 - 12.0).max(8.0),
+        9.5,
+        TEXT_MUTED,
+        &format!("p{}/{}", pg.current_page, pg.total_pages),
+    );
+    draw_wf_button(
+        w,
+        Rect::new((r.right() - btn_w).max(r.x), r.y, btn_w, r.h),
+        &pg.next,
+        "button",
+        vp,
+    );
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_table_grid(w: &mut SvgWriter, t: &TableGrid, r: Rect, vp: SceneViewport) {
+    w.tag("g").attr("data-component-id", &t.id).open();
+    draw_wf_box(w, r, vp, 4.0, BG_SCREEN, BORDER, 1.0);
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 14.0,
+        r.w - 16.0,
+        10.5,
+        TEXT_MUTED,
+        &t.title,
+    );
+
+    let pg_h = if t.pagination.is_some() { 22.0 } else { 0.0 };
+    let body = Rect::new(
+        r.x + 6.0,
+        r.y + 20.0,
+        (r.w - 12.0).max(0.0),
+        (r.h - 26.0 - pg_h).max(0.0),
+    );
+    let rows_n = t.rows.len().max(1);
+    let row_h = (body.h / rows_n as f64).clamp(12.0, 24.0);
+    for (ri, row) in t.rows.iter().enumerate() {
+        let ry = body.y + ri as f64 * row_h;
+        if ry + row_h > body.bottom() + 0.5 {
+            break;
+        }
+        let rr = Rect::new(body.x, ry, body.w, (row_h - 2.0).max(10.0));
+        draw_wf_box(w, rr, vp, 2.0, BG_PANEL, row.tone.wireframe_stroke(), 0.8);
+        let summary: Vec<&str> = row.cells.iter().map(|c| c.text.as_str()).collect();
+        let line = summary.join(" | ");
+        let mut cell_actions: Vec<&ActionControl> =
+            row.cells.iter().filter_map(|c| c.action.as_ref()).collect();
+        if let Some(ra) = &row.row_action {
+            cell_actions.push(ra);
+        }
+        let act_w = if cell_actions.is_empty() {
+            0.0
+        } else {
+            (rr.w * 0.36).clamp(48.0, 120.0)
+        };
+        draw_wf_text(
+            w,
+            rr.x + 6.0,
+            rr.y + rr.h * 0.5 + 3.0,
+            (rr.w - act_w - 12.0).max(8.0),
+            9.5,
+            TEXT_PRIMARY,
+            &line,
+        );
+        if !cell_actions.is_empty() {
+            render_wf_action_strip(
+                w,
+                Rect::new(
+                    rr.right() - act_w - 2.0,
+                    rr.y + 1.0,
+                    act_w,
+                    (rr.h - 2.0).max(8.0),
+                ),
+                &cell_actions,
+                "button",
+                vp,
+            );
+        }
+    }
+    if let Some(pg) = &t.pagination {
+        render_wf_pagination(
+            w,
+            Rect::new(
+                r.x + 6.0,
+                (r.bottom() - pg_h - 2.0).max(r.y),
+                (r.w - 12.0).max(0.0),
+                18.0,
+            ),
+            pg,
+            vp,
+        );
+    }
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_log_viewer(w: &mut SvgWriter, l: &LogViewer, r: Rect, vp: SceneViewport) {
+    w.tag("g")
+        .attr("data-component-id", &l.id)
+        .attr("role", "log")
+        .open();
+    draw_wf_box(w, r, vp, 4.0, BG_SCREEN, BORDER, 1.0);
+    let hdr_h = 20.0;
+    let ctrl_w = if l.controls.is_empty() {
+        0.0
+    } else {
+        (r.w * 0.35).clamp(52.0, 150.0)
+    };
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 14.0,
+        (r.w - ctrl_w - 16.0).max(8.0),
+        10.5,
+        TEXT_MUTED,
+        &l.title,
+    );
+    if !l.controls.is_empty() {
+        let ctrls: Vec<&ActionControl> = l.controls.iter().collect();
+        render_wf_action_strip(
+            w,
+            Rect::new((r.right() - ctrl_w - 4.0).max(r.x), r.y + 2.0, ctrl_w, 16.0),
+            &ctrls,
+            "button",
+            vp,
+        );
+    }
+
+    let pg_h = if l.pagination.is_some() { 22.0 } else { 0.0 };
+    let body = Rect::new(
+        r.x + 6.0,
+        r.y + hdr_h + 2.0,
+        (r.w - 12.0).max(0.0),
+        (r.h - hdr_h - 6.0 - pg_h).max(0.0),
+    );
+    let n = l.entries.len().max(1);
+    let line_h = (body.h / n as f64).clamp(12.0, 20.0);
+    for (i, entry) in l.entries.iter().enumerate() {
+        let ly = body.y + i as f64 * line_h;
+        if ly + line_h > body.bottom() + 0.5 {
+            break;
+        }
+        let lr = Rect::new(body.x, ly, body.w, (line_h - 1.0).max(10.0));
+        let btn_w = if entry.action.is_some() {
+            (lr.w * 0.25).clamp(44.0, 88.0)
+        } else {
+            0.0
+        };
+        let prefix = match entry.line_no {
+            Some(ln) => format!("{ln}: {}", entry.text),
+            None => entry.text.clone(),
+        };
+        draw_wf_text(
+            w,
+            lr.x + 4.0,
+            lr.y + lr.h * 0.5 + 3.0,
+            (lr.w - btn_w - 8.0).max(8.0),
+            9.5,
+            entry.level.wireframe_fg(),
+            &prefix,
+        );
+        if let Some(act) = &entry.action {
+            draw_wf_button(
+                w,
+                Rect::new((lr.right() - btn_w).max(lr.x), lr.y, btn_w, lr.h),
+                act,
+                "button",
+                vp,
+            );
+        }
+    }
+    if let Some(pg) = &l.pagination {
+        render_wf_pagination(
+            w,
+            Rect::new(
+                r.x + 6.0,
+                (r.bottom() - pg_h - 2.0).max(r.y),
+                (r.w - 12.0).max(0.0),
+                18.0,
+            ),
+            pg,
+            vp,
+        );
+    }
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_trainway(w: &mut SvgWriter, g: &TrainwayGraph, r: Rect, vp: SceneViewport) {
+    w.tag("g").attr("data-component-id", &g.id).open();
+    draw_wf_box(w, r, vp, 4.0, BG_SCREEN, BORDER, 1.0);
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 14.0,
+        r.w - 16.0,
+        10.5,
+        TEXT_MUTED,
+        &g.title,
+    );
+
+    let plot = r.inset(6.0, 20.0, 6.0, 4.0);
+    let act_w = (plot.w * 0.25).clamp(44.0, 82.0);
+    let track_box = Rect::new(plot.x, plot.y, (plot.w - act_w - 4.0).max(16.0), plot.h);
+    let mut stations: Vec<&str> = g.stations.iter().map(String::as_str).collect();
+    if stations.is_empty() {
+        stations.push("run");
+    }
+    let signal_storage: Vec<Vec<(u32, SignalGlyph, SemanticTone)>> = g
+        .tracks
+        .iter()
+        .map(|tr| {
+            tr.checkpoints
+                .iter()
+                .map(|c| (c.stage_index, c.signal, c.tone))
+                .collect()
+        })
+        .collect();
+    let legacy_tracks: Vec<ScreenTrack<'_>> = g
+        .tracks
+        .iter()
+        .enumerate()
+        .map(|(i, tr)| ScreenTrack {
+            ref_name: &tr.ref_name,
+            lane: tr.lane,
+            fork_stage: tr.fork_stage,
+            dashed: tr.dashed,
+            fading: tr.fading,
+            signals: &signal_storage[i],
+            node_tag: tr.node_tag.as_deref(),
+            node_lost: tr.node_lost,
+        })
+        .collect();
+    draw_tracks_compact(w, track_box, &stations, &legacy_tracks);
+
+    let track_actions: Vec<&ActionControl> = g
+        .tracks
+        .iter()
+        .filter_map(|tr| tr.action.as_ref())
+        .collect();
+    if !track_actions.is_empty() {
+        let th = (plot.h / track_actions.len() as f64).clamp(12.0, 22.0);
+        for (i, act) in track_actions.iter().enumerate() {
+            let ay = plot.y + i as f64 * th;
+            if ay + 10.0 <= plot.bottom() {
+                draw_wf_button(
+                    w,
+                    Rect::new(plot.right() - act_w, ay, act_w, (th - 2.0).max(10.0)),
+                    act,
+                    "button",
+                    vp,
+                );
+            }
+        }
+    }
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_gate_checklist(w: &mut SvgWriter, c: &GateChecklist, r: Rect, vp: SceneViewport) {
+    w.tag("g")
+        .attr("data-component-id", &c.id)
+        .attr("data-tone", c.overall_tone.as_str())
+        .open();
+    draw_wf_box(
+        w,
+        r,
+        vp,
+        4.0,
+        BG_SCREEN,
+        c.overall_tone.wireframe_stroke(),
+        1.0,
+    );
+    let title = match &c.environment {
+        Some(env) => format!("{} [{env}]", c.title),
+        None => c.title.clone(),
+    };
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 14.0,
+        r.w - 16.0,
+        10.5,
+        TEXT_MUTED,
+        &title,
+    );
+
+    let act_h = if c.actions.is_empty() { 0.0 } else { 22.0 };
+    let list_r = Rect::new(
+        r.x + 6.0,
+        r.y + 20.0,
+        (r.w - 12.0).max(0.0),
+        (r.h - 24.0 - act_h).max(0.0),
+    );
+    let item_h = (list_r.h / c.items.len().max(1) as f64).clamp(12.0, 22.0);
+    for (i, item) in c.items.iter().enumerate() {
+        let iy = list_r.y + i as f64 * item_h;
+        if iy + item_h > list_r.bottom() + 0.5 {
+            break;
+        }
+        render_signal_shape(w, list_r.x + 6.0, iy + item_h * 0.5, item.signal, item.tone);
+        let btn_w = if item.action.is_some() { 54.0 } else { 0.0 };
+        draw_wf_text(
+            w,
+            list_r.x + 16.0,
+            iy + item_h * 0.5 + 3.0,
+            (list_r.w - btn_w - 20.0).max(8.0),
+            9.5,
+            item.tone.wireframe_fg(),
+            &format!("{}: {}", item.label, item.status_label),
+        );
+        if let Some(act) = &item.action {
+            draw_wf_button(
+                w,
+                Rect::new(
+                    (list_r.right() - btn_w).max(list_r.x),
+                    iy + 1.0,
+                    btn_w,
+                    (item_h - 2.0).max(10.0),
+                ),
+                act,
+                "button",
+                vp,
+            );
+        }
+    }
+    if !c.actions.is_empty() {
+        let ctrls: Vec<&ActionControl> = c.actions.iter().collect();
+        render_wf_action_strip(
+            w,
+            Rect::new(
+                r.x + 6.0,
+                (r.bottom() - act_h - 2.0).max(r.y),
+                (r.w - 12.0).max(0.0),
+                18.0,
+            ),
+            &ctrls,
+            "button",
+            vp,
+        );
+    }
+    w.close();
+}
+
+fn render_wf_sparkline(w: &mut SvgWriter, s: &SparklineCard, r: Rect, vp: SceneViewport) {
+    w.tag("g")
+        .attr("data-component-id", &s.id)
+        .attr("data-tone", s.tone.as_str())
+        .open();
+    draw_wf_box(w, r, vp, 4.0, BG_SCREEN, s.tone.wireframe_stroke(), 1.0);
+    let kpi = match (&s.unit, &s.delta_label) {
+        (Some(u), Some(d)) => format!("{}: {}{u} ({d})", s.title, s.metric_value),
+        (Some(u), None) => format!("{}: {}{u}", s.title, s.metric_value),
+        _ => format!("{}: {}", s.title, s.metric_value),
+    };
+    let btn_w = if s.action.is_some() { 58.0 } else { 0.0 };
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 15.0,
+        (r.w - btn_w - 16.0).max(8.0),
+        10.5,
+        s.tone.wireframe_fg(),
+        &kpi,
+    );
+    if !s.samples.is_empty() && r.h >= 28.0 {
+        let plot = Rect::new(
+            r.x + 6.0,
+            r.y + 18.0,
+            (r.w - btn_w - 12.0).max(8.0),
+            (r.h - 22.0).max(6.0),
+        );
+        let d = sparkline_path(&s.samples, plot.x, plot.y, plot.w, plot.h, 3.0);
+        if !d.is_empty() {
+            w.tag("path")
+                .attr("d", d)
+                .attr("fill", "none")
+                .attr("stroke", s.tone.wireframe_fg())
+                .attr("stroke-width", 1.5)
+                .end();
+        }
+    }
+    if let Some(act) = &s.action {
+        draw_wf_button(
+            w,
+            Rect::new(
+                (r.right() - btn_w - 4.0).max(r.x),
+                r.y + 4.0,
+                btn_w,
+                (r.h - 8.0).clamp(10.0, 22.0),
+            ),
+            act,
+            "button",
+            vp,
+        );
+    }
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_kv_list(w: &mut SvgWriter, kv: &KeyValueList, r: Rect, vp: SceneViewport) {
+    w.tag("g").attr("data-component-id", &kv.id).open();
+    draw_wf_box(w, r, vp, 4.0, BG_SCREEN, BORDER, 1.0);
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 14.0,
+        r.w - 16.0,
+        10.5,
+        TEXT_MUTED,
+        &kv.title,
+    );
+    render_wf_kv_entries(
+        w,
+        &kv.entries,
+        Rect::new(
+            r.x + 6.0,
+            r.y + 18.0,
+            (r.w - 12.0).max(0.0),
+            (r.h - 22.0).max(0.0),
+        ),
+        vp,
+    );
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_kv_entries(w: &mut SvgWriter, entries: &[KeyValueEntry], r: Rect, vp: SceneViewport) {
+    if entries.is_empty() || r.h < 10.0 {
+        return;
+    }
+    let row_h = (r.h / entries.len() as f64).clamp(12.0, 20.0);
+    for (i, entry) in entries.iter().enumerate() {
+        let ry = r.y + i as f64 * row_h;
+        if ry + row_h > r.bottom() + 0.5 {
+            break;
+        }
+        let btn_w = if entry.action.is_some() { 54.0 } else { 0.0 };
+        draw_wf_text(
+            w,
+            r.x + 4.0,
+            ry + row_h * 0.5 + 3.0,
+            (r.w - btn_w - 8.0).max(8.0),
+            9.5,
+            entry.tone.wireframe_fg(),
+            &format!("{}: {}", entry.key, entry.value),
+        );
+        if let Some(act) = &entry.action {
+            draw_wf_button(
+                w,
+                Rect::new(
+                    (r.right() - btn_w).max(r.x),
+                    ry + 1.0,
+                    btn_w,
+                    (row_h - 2.0).max(10.0),
+                ),
+                act,
+                "button",
+                vp,
+            );
+        }
+    }
+}
+
+fn render_wf_platform_panel(w: &mut SvgWriter, p: &PlatformPanel, r: Rect, vp: SceneViewport) {
+    w.tag("g")
+        .attr("data-component-id", &p.id)
+        .attr("data-tone", p.tone.as_str())
+        .open();
+    draw_wf_box(w, r, vp, 4.0, BG_SCREEN, p.tone.wireframe_stroke(), 1.0);
+    let header_txt = match &p.summary {
+        Some(s) => format!("{} — {s}", p.title),
+        None => p.title.clone(),
+    };
+    draw_wf_bold(
+        w,
+        r.x + 8.0,
+        r.y + 14.0,
+        r.w - 16.0,
+        10.5,
+        TEXT_PRIMARY,
+        &header_txt,
+    );
+    let act_h = if p.controls.is_empty() { 0.0 } else { 22.0 };
+    render_wf_kv_entries(
+        w,
+        &p.attributes,
+        Rect::new(
+            r.x + 6.0,
+            r.y + 18.0,
+            (r.w - 12.0).max(0.0),
+            (r.h - 22.0 - act_h).max(0.0),
+        ),
+        vp,
+    );
+    if !p.controls.is_empty() {
+        let ctrls: Vec<&ActionControl> = p.controls.iter().collect();
+        render_wf_action_strip(
+            w,
+            Rect::new(
+                r.x + 6.0,
+                (r.bottom() - act_h - 2.0).max(r.y),
+                (r.w - 12.0).max(0.0),
+                18.0,
+            ),
+            &ctrls,
+            "button",
+            vp,
+        );
+    }
+    w.close();
+}
+
+fn render_wf_component(w: &mut SvgWriter, comp: &SceneComponent, r: Rect, vp: SceneViewport) {
+    match comp {
+        SceneComponent::StatusMatrix(m) => render_wf_status_matrix(w, m, r, vp),
+        SceneComponent::TableGrid(t) => render_wf_table_grid(w, t, r, vp),
+        SceneComponent::LogViewer(l) => render_wf_log_viewer(w, l, r, vp),
+        SceneComponent::TrainwayGraph(g) => render_wf_trainway(w, g, r, vp),
+        SceneComponent::GateChecklist(c) => render_wf_gate_checklist(w, c, r, vp),
+        SceneComponent::SparklineCard(s) => render_wf_sparkline(w, s, r, vp),
+        SceneComponent::KeyValueList(kv) => render_wf_kv_list(w, kv, r, vp),
+        SceneComponent::PlatformPanel(p) => render_wf_platform_panel(w, p, r, vp),
+    }
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_section(
+    skin: &WireframeSkin,
+    w: &mut SvgWriter,
+    sec: &SceneSection,
+    r: Rect,
+    vp: SceneViewport,
+) {
+    let cr = clamp_rect(r, vp);
+    w.tag("g")
+        .attr("data-section-id", &sec.id)
+        .attr("data-tone", sec.tone.as_str())
+        .open();
+    skin.panel(
+        w,
+        &Panel {
+            id: &sec.id,
+            title: &sec.title,
+            rect: cr,
+            role: Some("region"),
+            aria_label: Some(sec.aria_label.as_deref().unwrap_or(&sec.title)),
+        },
+    );
+    let inner = cr.inset(8.0, 22.0, 8.0, 6.0);
+    let n = sec.components.len();
+    if n > 0 && inner.h >= 16.0 {
+        let gap = 5.0;
+        let ch = ((inner.h - gap * (n - 1) as f64) / n as f64).max(14.0);
+        for (i, comp) in sec.components.iter().enumerate() {
+            let cy = inner.y + i as f64 * (ch + gap);
+            let comp_r = Rect::new(inner.x, cy, inner.w, ch.min((inner.bottom() - cy).max(0.0)));
+            render_wf_component(w, comp, comp_r, vp);
+        }
+    }
+    w.close();
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_dialog_overlay(
+    w: &mut SvgWriter,
+    dialog: &DialogModel,
+    vp: SceneViewport,
+    with_backdrop: bool,
+) {
+    if with_backdrop {
+        w.tag("rect")
+            .attr("x", 0.0)
+            .attr("y", 0.0)
+            .attr("width", vp.width)
+            .attr("height", vp.height)
+            .attr("fill", "#05070a")
+            .attr("fill-opacity", 0.82)
+            .end();
+    }
+    let margin = 12.0;
+    let max_w = (vp.width - margin * 2.0).max(20.0);
+    let max_h = (vp.height - margin * 2.0).max(20.0);
+    let card_w = max_w.min(540.0);
+    let card_h = max_h.min(340.0);
+    let card = clamp_rect(
+        Rect::new(
+            (vp.width - card_w) * 0.5,
+            (vp.height - card_h) * 0.5,
+            card_w,
+            card_h,
+        ),
+        vp,
+    );
+    let dismissible_str = if dialog.is_dismissible() {
+        "true"
+    } else {
+        "false"
+    };
+    w.tag("g")
+        .attr("id", dialog.dialog_id())
+        .attr("data-dialog-kind", dialog.dialog_kind())
+        .attr("data-dismissible", dismissible_str)
+        .attr("data-tone", dialog.tone().as_str())
+        .attr("role", "dialog")
+        .attr("aria-modal", "true")
+        .attr("aria-label", dialog.title())
+        .open();
+
+    draw_wf_box(
+        w,
+        card,
+        vp,
+        6.0,
+        BG_PANEL,
+        dialog.tone().wireframe_stroke(),
+        1.5,
+    );
+    let hdr_close_w = 0.0;
+    draw_wf_bold(
+        w,
+        card.x + 12.0,
+        card.y + 22.0,
+        (card.w - hdr_close_w - 24.0).max(8.0),
+        12.5,
+        TEXT_PRIMARY,
+        dialog.title(),
+    );
+
+    let body = card.inset(12.0, 34.0, 12.0, 42.0);
+    let footer = Rect::new(
+        card.x + 12.0,
+        (card.bottom() - 34.0).max(card.y),
+        (card.w - 24.0).max(8.0),
+        24.0,
+    );
+
+    match dialog {
+        DialogModel::PasskeyEnrollmentGate(d) => render_wf_dlg_passkey(w, d, body, footer, vp),
+        DialogModel::UserProfile(d) => render_wf_dlg_profile(w, d, body, footer, vp),
+        DialogModel::SessionRoles(d) => render_wf_dlg_roles(w, d, body, footer, vp),
+        DialogModel::RiskConfirm(d) => render_wf_dlg_risk(w, d, body, footer, vp),
+        DialogModel::InviteCreatedOnce(d) => render_wf_dlg_invite(w, d, body, footer, vp),
+    }
+
+    w.close();
+}
+
+fn render_wf_dlg_passkey(
+    w: &mut SvgWriter,
+    d: &PasskeyEnrollmentDialog,
+    body: Rect,
+    footer: Rect,
+    vp: SceneViewport,
+) {
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 14.0,
+        body.w,
+        10.5,
+        COLOR_WARN,
+        &d.reason,
+    );
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 34.0,
+        body.w,
+        10.0,
+        TEXT_MUTED,
+        &format!(
+            "Subject: {} | Passkeys: {}",
+            d.account_subject, d.passkey_count
+        ),
+    );
+    let mut actions = vec![&d.enroll_action];
+    if let Some(so) = &d.sign_out_action {
+        actions.push(so);
+    }
+    render_wf_action_strip(w, footer, &actions, "button", vp);
+}
+
+fn render_wf_dlg_profile(
+    w: &mut SvgWriter,
+    d: &UserProfileDialog,
+    body: Rect,
+    footer: Rect,
+    vp: SceneViewport,
+) {
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 14.0,
+        body.w,
+        10.5,
+        TEXT_PRIMARY,
+        &format!(
+            "{} ({}) | Passkeys: {}",
+            d.handle, d.subject_id, d.passkey_count
+        ),
+    );
+    let roles_joined: Vec<&str> = d.active_roles.iter().map(|r| r.role.as_str()).collect();
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 34.0,
+        body.w,
+        10.0,
+        TEXT_MUTED,
+        &format!("Roles: {}", roles_joined.join(", ")),
+    );
+    let mut actions: Vec<&ActionControl> = Vec::new();
+    if let Some(lock) = &d.lock_action {
+        actions.push(lock);
+    }
+    if let Some(pk) = &d.manage_passkeys_action {
+        actions.push(pk);
+    }
+    if let Some(so) = &d.sign_out_action {
+        actions.push(so);
+    }
+    actions.push(&d.close_action);
+    render_wf_action_strip(w, footer, &actions, "button", vp);
+}
+
+#[allow(clippy::cast_precision_loss)]
+fn render_wf_dlg_roles(
+    w: &mut SvgWriter,
+    d: &SessionRolesDialog,
+    body: Rect,
+    footer: Rect,
+    vp: SceneViewport,
+) {
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 12.0,
+        body.w,
+        10.0,
+        TEXT_MUTED,
+        &format!(
+            "{} | step-up: {}",
+            d.subject_handle,
+            if d.step_up_verified { "yes" } else { "no" }
+        ),
+    );
+    let list_y = body.y + 20.0;
+    let avail_h = (body.bottom() - list_y).max(0.0);
+    let row_h = (avail_h / d.roles.len().max(1) as f64).clamp(16.0, 26.0);
+    for (i, role) in d.roles.iter().enumerate() {
+        let ry = list_y + i as f64 * row_h;
+        if ry + row_h > body.bottom() + 0.5 {
+            break;
+        }
+        let btn_w = (body.w * 0.28).clamp(52.0, 90.0);
+        draw_wf_text(
+            w,
+            body.x,
+            ry + row_h * 0.5 + 3.0,
+            (body.w - btn_w - 8.0).max(8.0),
+            10.0,
+            role.tone.wireframe_fg(),
+            &format!("{}: {}", role.role, role.description),
+        );
+        draw_wf_button(
+            w,
+            Rect::new(
+                (body.right() - btn_w).max(body.x),
+                ry + 1.0,
+                btn_w,
+                (row_h - 2.0).max(12.0),
+            ),
+            &role.action,
+            "button",
+            vp,
+        );
+    }
+    render_wf_action_strip(w, footer, &[&d.close_action], "button", vp);
+}
+
+fn render_wf_dlg_risk(
+    w: &mut SvgWriter,
+    d: &RiskConfirmDialog,
+    body: Rect,
+    footer: Rect,
+    vp: SceneViewport,
+) {
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 14.0,
+        body.w,
+        10.5,
+        TEXT_PRIMARY,
+        &d.summary,
+    );
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 32.0,
+        body.w,
+        10.0,
+        d.tone.wireframe_fg(),
+        &format!("Target: {} | {}", d.target_resource, d.consequence),
+    );
+    if let Some(phrase) = &d.confirmation_phrase {
+        draw_wf_text(
+            w,
+            body.x,
+            body.y + 52.0,
+            body.w,
+            9.5,
+            TEXT_MUTED,
+            &format!("Type phrase: {phrase}"),
+        );
+        let box_r = clamp_rect(Rect::new(body.x, body.y + 58.0, body.w, 22.0), vp);
+        w.tag("g")
+            .attr("data-control-id", &d.phrase_input_id)
+            .attr("data-action", &d.phrase_input_action)
+            .attr(
+                "data-phrase-matched",
+                if d.phrase_matched { "true" } else { "false" },
+            )
+            .attr("role", "textbox")
+            .attr("aria-label", "Confirmation phrase input")
+            .attr("tabindex", 0_u32)
+            .attr("data-bbox-x", box_r.x)
+            .attr("data-bbox-y", box_r.y)
+            .attr("data-bbox-w", box_r.w)
+            .attr("data-bbox-h", box_r.h)
+            .open();
+        draw_wf_box(
+            w,
+            box_r,
+            vp,
+            3.0,
+            BG_SCREEN,
+            if d.phrase_matched { COLOR_PASS } else { BORDER },
+            1.0,
+        );
+        draw_wf_text(
+            w,
+            box_r.x + 6.0,
+            box_r.y + 14.0,
+            (box_r.w - 12.0).max(8.0),
+            10.0,
+            TEXT_PRIMARY,
+            &d.typed_confirmation,
+        );
+        w.close();
+    }
+    render_wf_action_strip(
+        w,
+        footer,
+        &[&d.cancel_action, &d.confirm_action],
+        "button",
+        vp,
+    );
+}
+
+fn render_wf_dlg_invite(
+    w: &mut SvgWriter,
+    d: &InviteCreatedOnceDialog,
+    body: Rect,
+    footer: Rect,
+    vp: SceneViewport,
+) {
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 14.0,
+        body.w,
+        10.0,
+        COLOR_WARN,
+        &d.warning,
+    );
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 32.0,
+        body.w,
+        10.0,
+        TEXT_MUTED,
+        &format!("Invitee: {} | Expires: {}", d.invitee_hint, d.expires_at),
+    );
+    draw_wf_text(
+        w,
+        body.x,
+        body.y + 52.0,
+        body.w,
+        10.0,
+        COLOR_PASS,
+        &d.invite_url,
+    );
+    render_wf_action_strip(w, footer, &[&d.copy_action, &d.close_action], "button", vp);
+}
+
+impl SceneRenderer for WireframeSkin {
+    fn skin_id(&self) -> &'static str {
+        "wireframe"
+    }
+
+    fn render_scene(&self, scene: &ConsoleScene, viewport: SceneViewport) -> String {
+        self.render_scene_with_dialog(scene, None, viewport)
+    }
+
+    fn render_dialog(&self, dialog: &DialogModel, viewport: SceneViewport) -> String {
+        let mut w = SvgWriter::document(viewport.width, viewport.height);
+        self.begin_frame(&mut w, viewport.width, viewport.height);
+        render_wf_dialog_overlay(&mut w, dialog, viewport, false);
+        w.finish_closing()
+    }
+
+    #[allow(clippy::cast_precision_loss)]
+    fn render_scene_with_dialog(
+        &self,
+        scene: &ConsoleScene,
+        dialog: Option<&DialogModel>,
+        viewport: SceneViewport,
+    ) -> String {
+        let mut w = SvgWriter::document(viewport.width, viewport.height);
+        self.begin_frame(&mut w, viewport.width, viewport.height);
+
+        w.tag("g")
+            .attr("class", "mu-console-scene")
+            .attr("data-skin", "wireframe")
+            .attr("data-area", &scene.active_area)
+            .attr_opt("data-subview", scene.active_subview.as_deref())
+            .open();
+
+        let pad = 8.0;
+        let inner_w = (viewport.width - pad * 2.0).max(20.0);
+        let mut y_cur = pad;
+
+        let hdr_h = (if viewport.is_phone() {
+            72.0_f64
+        } else {
+            42.0_f64
+        })
+        .min(viewport.height * 0.25);
+        render_wf_header(
+            &mut w,
+            scene,
+            Rect::new(pad, y_cur, inner_w, hdr_h),
+            viewport,
+        );
+        y_cur += hdr_h + 6.0;
+
+        if !scene.subviews.is_empty() && y_cur + 28.0 < viewport.height {
+            let sv_h = 26.0;
+            render_wf_subviews(
+                &mut w,
+                scene,
+                Rect::new(pad, y_cur, inner_w, sv_h),
+                viewport,
+            );
+            y_cur += sv_h + 6.0;
+        }
+
+        if scene.repo_selector.is_some() && y_cur + 26.0 < viewport.height {
+            let rb_h = 24.0;
+            render_wf_repo_bar(
+                &mut w,
+                scene,
+                Rect::new(pad, y_cur, inner_w, rb_h),
+                viewport,
+            );
+            y_cur += rb_h + 6.0;
+        }
+
+        for banner in &scene.banners {
+            if y_cur + 28.0 >= viewport.height - 40.0 {
+                break;
+            }
+            let br = clamp_rect(Rect::new(pad, y_cur, inner_w, 26.0), viewport);
+            draw_wf_box(
+                &mut w,
+                br,
+                viewport,
+                4.0,
+                BG_PANEL,
+                banner.tone.wireframe_stroke(),
+                1.0,
+            );
+            let act_w = if banner.action.is_some() { 76.0 } else { 0.0 };
+            draw_wf_text(
+                &mut w,
+                br.x + 8.0,
+                br.y + 16.0,
+                (br.w - act_w - 16.0).max(8.0),
+                10.0,
+                banner.tone.wireframe_fg(),
+                &format!("{}: {}", banner.title, banner.message),
+            );
+            if let Some(act) = &banner.action {
+                draw_wf_button(
+                    &mut w,
+                    Rect::new(
+                        (br.right() - act_w - 4.0).max(br.x),
+                        br.y + 3.0,
+                        act_w,
+                        20.0,
+                    ),
+                    act,
+                    "button",
+                    viewport,
+                );
+            }
+            y_cur += 30.0;
+        }
+
+        let footer_h = if scene.footer_status.is_some() {
+            22.0
+        } else {
+            0.0
+        };
+        let main_h = (viewport.height - pad - footer_h - y_cur).max(20.0);
+        let main_r = Rect::new(pad, y_cur, inner_w, main_h);
+
+        let sec_n = scene.sections.len();
+        if sec_n > 0 {
+            let cols = if !viewport.is_phone() && viewport.width >= 960.0 && sec_n > 1 {
+                2
+            } else {
+                1
+            };
+            let rows = sec_n.div_ceil(cols);
+            let gap = 8.0;
+            let sec_w = ((main_r.w - gap * (cols - 1) as f64) / cols as f64).max(20.0);
+            let sec_h = ((main_r.h - gap * (rows - 1) as f64) / rows as f64).max(20.0);
+            for (idx, sec) in scene.sections.iter().enumerate() {
+                let col = idx % cols;
+                let row = idx / cols;
+                let sr = Rect::new(
+                    main_r.x + col as f64 * (sec_w + gap),
+                    main_r.y + row as f64 * (sec_h + gap),
+                    sec_w,
+                    sec_h,
+                );
+                render_wf_section(self, &mut w, sec, sr, viewport);
+            }
+        }
+
+        if let Some(footer) = &scene.footer_status {
+            let fy = (viewport.height - pad - 18.0).max(0.0);
+            draw_wf_text(
+                &mut w,
+                pad + 4.0,
+                fy + 12.0,
+                inner_w - 8.0,
+                9.5,
+                TEXT_MUTED,
+                footer,
+            );
+        }
+
+        if let Some(dlg) = dialog {
+            render_wf_dialog_overlay(&mut w, dlg, viewport, true);
+        }
+
+        w.close();
+        w.finish_closing()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1460,7 +2907,6 @@ mod tests {
                 action: SwitchAction::Maintained,
                 options: &opts,
                 selected: 0,
-                pulled: false,
                 horizontal: false,
             },
         );
@@ -1616,7 +3062,6 @@ mod tests {
             action: SwitchAction::Maintained,
             options: &opts,
             selected: 1,
-            pulled: false,
             horizontal: true,
         };
         let mut w = SvgWriter::document(240.0, 48.0);
@@ -1628,5 +3073,261 @@ mod tests {
         assert!(svg.contains("x=\"124\""));
         assert!(svg.contains("textLength=\"88\""));
         assert!(svg.contains("lengthAdjust=\"spacing\""));
+    }
+
+    fn assert_svg_strictly_bounded(svg: &str, vp: SceneViewport) {
+        assert!(!svg.contains("<filter"), "SVG must not use filter elements");
+        assert!(
+            !svg.contains("feGaussianBlur") && !svg.contains("feTurbulence"),
+            "SVG must not use Gaussian blur or turbulence filters"
+        );
+        let doc = roxmltree::Document::parse(svg).expect("wireframe output must be valid XML");
+        for node in doc.descendants() {
+            if node.has_tag_name("rect") {
+                let x: f64 = node.attribute("x").unwrap().parse().unwrap();
+                let y: f64 = node.attribute("y").unwrap().parse().unwrap();
+                let w: f64 = node.attribute("width").unwrap().parse().unwrap();
+                let h: f64 = node.attribute("height").unwrap().parse().unwrap();
+                assert!(
+                    x >= -0.01
+                        && y >= -0.01
+                        && w >= 0.0
+                        && h >= 0.0
+                        && x + w <= vp.width + 0.05
+                        && y + h <= vp.height + 0.05,
+                    "rect overflow ({x}, {y}, {w}, {h}) outside {}x{}",
+                    vp.width,
+                    vp.height
+                );
+            }
+            if let (Some(bx), Some(by), Some(bw), Some(bh)) = (
+                node.attribute("data-bbox-x"),
+                node.attribute("data-bbox-y"),
+                node.attribute("data-bbox-w"),
+                node.attribute("data-bbox-h"),
+            ) {
+                let x: f64 = bx.parse().unwrap();
+                let y: f64 = by.parse().unwrap();
+                let w: f64 = bw.parse().unwrap();
+                let h: f64 = bh.parse().unwrap();
+                assert!(
+                    x >= -0.01
+                        && y >= -0.01
+                        && w >= 0.0
+                        && h >= 0.0
+                        && x + w <= vp.width + 0.05
+                        && y + h <= vp.height + 0.05,
+                    "data-bbox overflow ({x}, {y}, {w}, {h}) outside {}x{}",
+                    vp.width,
+                    vp.height
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn wireframe_scene_renders_deterministically_with_zero_overflow_across_viewports() {
+        let skin = WireframeSkin;
+        let scene = crate::html::tests::sample_scene();
+        for vp in [
+            SceneViewport::DESKTOP,
+            SceneViewport::TABLET,
+            SceneViewport::COMPACT_LANDSCAPE,
+            SceneViewport::PHONE,
+        ] {
+            let a = skin.render_scene(&scene, vp);
+            let b = skin.render_scene(&scene, vp);
+            assert_eq!(a, b);
+            assert_svg_strictly_bounded(&a, vp);
+        }
+
+        let desktop_svg = skin.render_scene(&scene, SceneViewport::DESKTOP);
+        assert!(desktop_svg.contains("fill=\"#0c1016\""));
+        assert!(desktop_svg.contains("stroke=\"#252d38\""));
+        assert!(desktop_svg.contains("disabled=\"disabled\""));
+        assert!(desktop_svg.contains("aria-disabled=\"true\""));
+    }
+
+    #[test]
+    fn wireframe_dialogs_render_zero_overflow_and_modal_semantics() {
+        let skin = WireframeSkin;
+        let scene = crate::html::tests::sample_scene();
+        let dialogs = crate::html::tests::sample_dialogs();
+        for dlg in &dialogs {
+            for vp in [SceneViewport::DESKTOP, SceneViewport::PHONE] {
+                let standalone = skin.render_dialog(dlg, vp);
+                assert_svg_strictly_bounded(&standalone, vp);
+                assert!(standalone.contains("role=\"dialog\""));
+                assert!(standalone.contains("aria-modal=\"true\""));
+                assert!(standalone.contains(dlg.dialog_kind()));
+            }
+        }
+        for (dlg, vp) in [
+            (&dialogs[0], SceneViewport::DESKTOP),
+            (&dialogs[3], SceneViewport::PHONE),
+        ] {
+            let overlay = skin.render_scene_with_dialog(&scene, Some(dlg), vp);
+            assert_svg_strictly_bounded(&overlay, vp);
+            assert!(overlay.contains("fill-opacity=\"0.82\""));
+            assert!(overlay.contains(dlg.dialog_kind()));
+        }
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    struct ParityRecord {
+        action: Option<String>,
+        area: Option<String>,
+        subview: Option<String>,
+        tone: Option<String>,
+        disabled: bool,
+        aria_disabled: Option<String>,
+    }
+
+    fn extract_attr(attrs: &str, name: &str) -> Option<String> {
+        let needle = format!("{name}=\"");
+        let start = attrs.find(&needle)? + needle.len();
+        let rest = &attrs[start..];
+        let end = rest.find('"')?;
+        Some(rest[..end].to_owned())
+    }
+
+    fn has_bool_attr(tag_chunk: &str, name: &str) -> bool {
+        let mut chars = tag_chunk.char_indices().peekable();
+        while let Some(&(_, c)) = chars.peek() {
+            if c.is_ascii_whitespace() {
+                break;
+            }
+            chars.next();
+        }
+        while let Some((i, c)) = chars.next() {
+            if c.is_ascii_whitespace() {
+                continue;
+            }
+            if c == '"' || c == '\'' {
+                let q = c;
+                for (_, ch) in chars.by_ref() {
+                    if ch == q {
+                        break;
+                    }
+                }
+                continue;
+            }
+            let rest = &tag_chunk[i..];
+            if let Some(after) = rest.strip_prefix(name) {
+                let at_boundary = after
+                    .chars()
+                    .next()
+                    .is_none_or(|nc| nc.is_ascii_whitespace() || nc == '/' || nc == '>');
+                if at_boundary {
+                    return true;
+                }
+            }
+            for (_, ch) in chars.by_ref() {
+                if ch.is_ascii_whitespace() {
+                    break;
+                }
+                if ch == '=' {
+                    while let Some(&(_, vc)) = chars.peek() {
+                        if vc == '"' || vc == '\'' {
+                            let q = vc;
+                            chars.next();
+                            for (_, qch) in chars.by_ref() {
+                                if qch == q {
+                                    break;
+                                }
+                            }
+                            break;
+                        } else if vc.is_ascii_whitespace() {
+                            break;
+                        }
+                        chars.next();
+                    }
+                    break;
+                }
+            }
+        }
+        false
+    }
+
+    fn collect_html_controls(html: &str) -> std::collections::BTreeMap<String, ParityRecord> {
+        let mut out = std::collections::BTreeMap::new();
+        let mut rest = html;
+        while let Some(pos) = rest.find('<') {
+            rest = &rest[pos + 1..];
+            let Some(end) = rest.find('>') else {
+                break;
+            };
+            let tag_chunk = &rest[..end];
+            if let Some(cid) = extract_attr(tag_chunk, "data-control-id") {
+                if extract_attr(tag_chunk, "data-action").is_some() {
+                    let rec = ParityRecord {
+                        action: extract_attr(tag_chunk, "data-action"),
+                        area: extract_attr(tag_chunk, "data-area"),
+                        subview: extract_attr(tag_chunk, "data-subview"),
+                        tone: extract_attr(tag_chunk, "data-tone"),
+                        disabled: has_bool_attr(tag_chunk, "disabled")
+                            || extract_attr(tag_chunk, "data-disabled").as_deref() == Some("true"),
+                        aria_disabled: extract_attr(tag_chunk, "aria-disabled"),
+                    };
+                    assert!(
+                        out.insert(cid.clone(), rec).is_none(),
+                        "duplicate data-control-id `{cid}` in HTML output"
+                    );
+                }
+            }
+            rest = &rest[end + 1..];
+        }
+        out
+    }
+
+    fn collect_svg_controls(svg: &str) -> std::collections::BTreeMap<String, ParityRecord> {
+        let doc = roxmltree::Document::parse(svg).expect("valid SVG");
+        let mut out = std::collections::BTreeMap::new();
+        for n in doc.descendants() {
+            if let (Some(cid), Some(act)) =
+                (n.attribute("data-control-id"), n.attribute("data-action"))
+            {
+                assert!(
+                    out.insert(
+                        cid.to_owned(),
+                        ParityRecord {
+                            action: Some(act.to_owned()),
+                            area: n.attribute("data-area").map(str::to_owned),
+                            subview: n.attribute("data-subview").map(str::to_owned),
+                            tone: n.attribute("data-tone").map(str::to_owned),
+                            disabled: n.attribute("disabled").is_some()
+                                || n.attribute("data-disabled") == Some("true"),
+                            aria_disabled: n.attribute("aria-disabled").map(str::to_owned),
+                        },
+                    )
+                    .is_none(),
+                    "duplicate data-control-id `{cid}` in SVG output"
+                );
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn html_and_wireframe_share_control_id_action_and_disabled_parity() {
+        let html_skin = crate::html::HtmlCoreSkin;
+        let wf_skin = WireframeSkin;
+        let scene = crate::html::tests::sample_scene();
+
+        let html = html_skin.render_scene(&scene, SceneViewport::DESKTOP);
+        let svg = wf_skin.render_scene(&scene, SceneViewport::DESKTOP);
+
+        assert_eq!(collect_html_controls(&html), collect_svg_controls(&svg));
+
+        for dlg in crate::html::tests::sample_dialogs() {
+            let dlg_html = html_skin.render_dialog(&dlg, SceneViewport::DESKTOP);
+            let dlg_svg = wf_skin.render_dialog(&dlg, SceneViewport::DESKTOP);
+            assert_eq!(
+                collect_html_controls(&dlg_html),
+                collect_svg_controls(&dlg_svg),
+                "parity mismatch for dialog {}",
+                dlg.dialog_kind()
+            );
+        }
     }
 }

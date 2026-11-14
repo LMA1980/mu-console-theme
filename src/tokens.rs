@@ -17,9 +17,12 @@ pub mod wireframe {
     pub const BG_PANEL: &str = "#141922";
     pub const BG_SCREEN: &str = "#090c10";
     pub const BG_CONTROL: &str = "#1b2230";
+    pub const BG_DISABLED: &str = "#0c1016";
     pub const BORDER: &str = "#2b3440";
+    pub const BORDER_DISABLED: &str = "#252d38";
     pub const TEXT_PRIMARY: &str = "#e6edf3";
     pub const TEXT_MUTED: &str = "#8b949e";
+    pub const TEXT_DISABLED: &str = "#636e7b";
     pub const PASS: &str = "#33f08a";
     pub const WARN: &str = "#ffb43a";
     pub const FAIL: &str = "#ff4d4d";
@@ -44,9 +47,12 @@ mod tests {
             wireframe::BG_PANEL,
             wireframe::BG_SCREEN,
             wireframe::BG_CONTROL,
+            wireframe::BG_DISABLED,
             wireframe::BORDER,
+            wireframe::BORDER_DISABLED,
             wireframe::TEXT_PRIMARY,
             wireframe::TEXT_MUTED,
+            wireframe::TEXT_DISABLED,
             wireframe::PASS,
             wireframe::WARN,
             wireframe::FAIL,

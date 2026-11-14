@@ -10,9 +10,27 @@ use std::fmt::Write as _;
 
 /// Format a number for SVG output: at most 2 decimals, no trailing zeros.
 #[must_use]
+#[allow(clippy::cast_possible_truncation)]
 pub fn num(v: f64) -> String {
     if !v.is_finite() {
         return "0".to_owned();
+    }
+    if v.abs() <= 1e12 {
+        let scaled = (v * 100.0).round() as i64;
+        if scaled == 0 {
+            return "0".to_owned();
+        }
+        let abs = scaled.unsigned_abs();
+        let whole = abs / 100;
+        let frac = abs % 100;
+        let sign = if scaled < 0 { "-" } else { "" };
+        return if frac == 0 {
+            format!("{sign}{whole}")
+        } else if frac.is_multiple_of(10) {
+            format!("{sign}{whole}.{}", frac / 10)
+        } else {
+            format!("{sign}{whole}.{frac:02}")
+        };
     }
     let mut s = format!("{:.2}", (v * 100.0).round() / 100.0);
     if s.contains('.') {
@@ -55,6 +73,12 @@ impl AttrValue for &str {
 }
 
 impl AttrValue for String {
+    fn write_attr(&self, out: &mut String) {
+        escape_into(out, self);
+    }
+}
+
+impl AttrValue for &String {
     fn write_attr(&self, out: &mut String) {
         escape_into(out, self);
     }
@@ -315,6 +339,51 @@ impl PathData {
     pub fn build(self) -> String {
         self.0
     }
+}
+
+/// Build an SVG polyline `d` path for numeric `samples` inside `(x, y, width, height)` with `pad`.
+#[must_use]
+#[allow(clippy::cast_precision_loss)]
+pub fn sparkline_path(
+    samples: &[f64],
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    pad: f64,
+) -> String {
+    let mut min_v = f64::INFINITY;
+    let mut max_v = f64::NEG_INFINITY;
+    for &s in samples {
+        if s.is_finite() {
+            min_v = min_v.min(s);
+            max_v = max_v.max(s);
+        }
+    }
+    if !min_v.is_finite() || !max_v.is_finite() {
+        return String::new();
+    }
+    let span = (max_v - min_v).abs();
+    let usable_w = (width - pad * 2.0).max(1.0);
+    let usable_h = (height - pad * 2.0).max(1.0);
+    let mut p = PathData::new();
+    let count = samples.len();
+    for (idx, &sample) in samples.iter().enumerate() {
+        let val = if sample.is_finite() { sample } else { min_v };
+        let px = if count <= 1 {
+            x + pad + usable_w * 0.5
+        } else {
+            x + pad + (idx as f64 / (count - 1) as f64) * usable_w
+        };
+        let norm = if span < f64::EPSILON {
+            0.5
+        } else {
+            (val - min_v) / span
+        };
+        let py = y + pad + (1.0 - norm) * usable_h;
+        p = if idx == 0 { p.m(px, py) } else { p.l(px, py) };
+    }
+    p.build()
 }
 
 #[cfg(test)]

@@ -21,6 +21,20 @@ pub enum SemanticTone {
     Info,
 }
 
+impl SemanticTone {
+    /// Lowercase CSS/data-attribute token for this tone.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Neutral => "neutral",
+            Self::Pass => "pass",
+            Self::Warn => "warn",
+            Self::Fail => "fail",
+            Self::Info => "info",
+        }
+    }
+}
+
 /// Geometric block / checkpoint signal shape (never colour-alone).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SignalGlyph {
@@ -75,7 +89,7 @@ pub struct SelectorOption<'a> {
     pub tone: SemanticTone,
 }
 
-/// Multi-position selector (`Maintained`, `SpringReturn`, or `PullToTurn`).
+/// Multi-position selector (`Maintained` or `SpringReturn`).
 #[derive(Debug, Clone, Copy)]
 pub struct Selector<'a> {
     pub control_id: &'a str,
@@ -84,7 +98,6 @@ pub struct Selector<'a> {
     pub action: SwitchAction,
     pub options: &'a [SelectorOption<'a>],
     pub selected: usize,
-    pub pulled: bool,
     pub horizontal: bool,
 }
 
@@ -103,7 +116,7 @@ pub struct Rotary<'a> {
     pub settling: bool,
 }
 
-/// Status lamp / annunciator pill.
+/// Status lamp pill.
 #[derive(Debug, Clone, Copy)]
 pub struct Lamp<'a> {
     pub control_id: &'a str,
@@ -176,13 +189,13 @@ pub trait Skin {
     /// Render a structural panel container.
     fn panel(&self, w: &mut SvgWriter, p: &Panel<'_>);
 
-    /// Render a multi-position selector (`Maintained`, `SpringReturn`, `PullToTurn`).
+    /// Render a multi-position selector (`Maintained` or `SpringReturn`).
     fn selector(&self, w: &mut SvgWriter, s: &Selector<'_>);
 
     /// Render the two-level repository / submodule rotary selector.
     fn rotary(&self, w: &mut SvgWriter, r: &Rotary<'_>);
 
-    /// Render a status lamp or annunciator pill.
+    /// Render a status lamp pill.
     fn lamp(&self, w: &mut SvgWriter, l: &Lamp<'_>);
 
     /// Render a dynamic readout window.
