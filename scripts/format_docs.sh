@@ -25,7 +25,9 @@ FILES=()
 while IFS= read -r f; do FILES+=("$f"); done < <(
   find . -name "*.md" \
     -not -path "./.git/*" \
-    -not -path "./target/*" | sort
+    -not -path "./target/*" \
+    -not -path "./.agents/*" \
+    -not -path "./skills/*" | sort
 )
 
 if [[ "${CHECK_ONLY}" == true ]]; then

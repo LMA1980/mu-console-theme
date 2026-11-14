@@ -4,7 +4,7 @@ version = "0.1.1"
 edition = "2021"
 authors = ["LMA1980"]
 repository = "https://github.com/LMA1980/mu-console-theme"
-description = "MuConsole Wireframe theme: CSS/SVG colour tokens, Nerd icon table, font metrics, and WireframeSkin SVG renderer"
+description = "MuConsole theme suite: skin-agnostic ConsoleScene/DialogModel descriptors, HtmlCoreSkin, WireframeSkin, CSS/SVG tokens, Nerd icons, and font metrics"
 license = "LGPL-3.0-only WITH LGPL-3.0-linking-exception"
 
 [lib]
