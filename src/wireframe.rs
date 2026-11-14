@@ -3129,19 +3129,28 @@ mod tests {
     fn wireframe_scene_renders_deterministically_with_zero_overflow_across_viewports() {
         let skin = WireframeSkin;
         let scene = crate::html::tests::sample_scene();
-        for vp in [
-            SceneViewport::DESKTOP,
-            SceneViewport::TABLET,
-            SceneViewport::COMPACT_LANDSCAPE,
-            SceneViewport::PHONE,
-        ] {
+        let viewports: &[SceneViewport] = if cfg!(miri) {
+            &[SceneViewport::DESKTOP]
+        } else {
+            &[
+                SceneViewport::DESKTOP,
+                SceneViewport::TABLET,
+                SceneViewport::COMPACT_LANDSCAPE,
+                SceneViewport::PHONE,
+            ]
+        };
+        let mut desktop_svg = None;
+        for &vp in viewports {
             let a = skin.render_scene(&scene, vp);
             let b = skin.render_scene(&scene, vp);
             assert_eq!(a, b);
             assert_svg_strictly_bounded(&a, vp);
+            if vp == SceneViewport::DESKTOP {
+                desktop_svg = Some(a);
+            }
         }
 
-        let desktop_svg = skin.render_scene(&scene, SceneViewport::DESKTOP);
+        let desktop_svg = desktop_svg.expect("desktop viewport rendered");
         assert!(desktop_svg.contains("fill=\"#0c1016\""));
         assert!(desktop_svg.contains("stroke=\"#252d38\""));
         assert!(desktop_svg.contains("disabled=\"disabled\""));
@@ -3153,8 +3162,14 @@ mod tests {
         let skin = WireframeSkin;
         let scene = crate::html::tests::sample_scene();
         let dialogs = crate::html::tests::sample_dialogs();
-        for dlg in &dialogs {
-            for vp in [SceneViewport::DESKTOP, SceneViewport::PHONE] {
+        let dlg_limit = if cfg!(miri) { 1 } else { dialogs.len() };
+        let viewports: &[SceneViewport] = if cfg!(miri) {
+            &[SceneViewport::DESKTOP]
+        } else {
+            &[SceneViewport::DESKTOP, SceneViewport::PHONE]
+        };
+        for dlg in dialogs.iter().take(dlg_limit) {
+            for &vp in viewports {
                 let standalone = skin.render_dialog(dlg, vp);
                 assert_svg_strictly_bounded(&standalone, vp);
                 assert!(standalone.contains("role=\"dialog\""));
@@ -3162,10 +3177,15 @@ mod tests {
                 assert!(standalone.contains(dlg.dialog_kind()));
             }
         }
-        for (dlg, vp) in [
-            (&dialogs[0], SceneViewport::DESKTOP),
-            (&dialogs[3], SceneViewport::PHONE),
-        ] {
+        let overlays: &[(&crate::scene::DialogModel, SceneViewport)] = if cfg!(miri) {
+            &[]
+        } else {
+            &[
+                (&dialogs[0], SceneViewport::DESKTOP),
+                (&dialogs[3], SceneViewport::PHONE),
+            ]
+        };
+        for &(dlg, vp) in overlays {
             let overlay = skin.render_scene_with_dialog(&scene, Some(dlg), vp);
             assert_svg_strictly_bounded(&overlay, vp);
             assert!(overlay.contains("fill-opacity=\"0.82\""));
@@ -3319,7 +3339,9 @@ mod tests {
 
         assert_eq!(collect_html_controls(&html), collect_svg_controls(&svg));
 
-        for dlg in crate::html::tests::sample_dialogs() {
+        let dialogs = crate::html::tests::sample_dialogs();
+        let dlg_limit = if cfg!(miri) { 0 } else { dialogs.len() };
+        for dlg in dialogs.into_iter().take(dlg_limit) {
             let dlg_html = html_skin.render_dialog(&dlg, SceneViewport::DESKTOP);
             let dlg_svg = wf_skin.render_dialog(&dlg, SceneViewport::DESKTOP);
             assert_eq!(
