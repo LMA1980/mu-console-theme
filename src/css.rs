@@ -78,6 +78,11 @@ pub fn tokens_css() -> String {
     s.push_str("#muconsole-filter::placeholder{color:var(--accent-neon-cyan);opacity:0.5}\n");
     s.push_str("#muconsole-filter:focus{border-color:var(--accent-neon-cyan);box-shadow:0 0 4px var(--accent-neon-cyan)}\n");
     s.push_str("#muconsole-aria-polite,#muconsole-aria-assertive{font-family:var(--font-crt);font-size:12px;color:var(--color-green-glow);padding:2px 8px;border-radius:2px;background:rgba(0,0,0,0.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-sizing:border-box}\n");
+    s.push_str("#muconsole-session-error,#muconsole-session-loading,#muconsole-auth-denied{font-family:var(--font-crt);font-size:12px;white-space:nowrap}\n");
+    s.push_str("#muconsole-session-error,#muconsole-auth-denied{color:var(--status-fail)}\n");
+    s.push_str(".mu-status-lamps{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}\n");
+    s.push_str(".mu-lamp{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:999px;border:1px solid var(--border-wireframe);background:var(--bg-screen);font-size:12px}\n");
+    s.push_str(".mu-lamp-val{font-weight:700}\n");
     s.push_str(
         "#muconsole-dashboard{flex:1 1 auto;overflow:hidden;position:relative;display:flex}\n",
     );
@@ -152,6 +157,11 @@ mod tests {
         assert!(css.contains("dialog.mu-dialog::backdrop"));
         assert!(css.contains("font-size:16px"));
         assert!(css.contains("[aria-disabled=\"true\"]"));
+        assert!(css.contains(".mu-status-lamps{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-left:auto}"));
+        assert!(css
+            .contains(".mu-lamp{display:inline-flex;align-items:center;gap:6px;padding:3px 8px;"));
+        assert!(css
+            .contains("#muconsole-session-error,#muconsole-auth-denied{color:var(--status-fail)}"));
         assert_eq!(css, tokens_css(), "deterministic");
     }
 
