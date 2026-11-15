@@ -395,6 +395,7 @@ impl HtmlCoreSkin {
                         .attr("data-lit", if lamp.lit { "true" } else { "false" })
                         .open();
                     w.tag("span").attr("class", "mu-lamp-key").text(&lamp.label);
+                    w.text(" ");
                     w.tag("span").attr("class", "mu-lamp-val").text(&lamp.value);
                     w.close();
                 }
@@ -1631,6 +1632,12 @@ pub(crate) mod tests {
         assert!(out_a.contains("data-component-id=\"kv-build\""));
         assert!(out_a.contains("data-component-id=\"plat-ctrl\""));
         assert!(out_a.contains("data-control-id=\"cd-promote\""));
+        assert!(
+            out_a.contains(
+                r#"<span class="mu-lamp-key">Cluster</span> <span class="mu-lamp-val">NOMINAL</span>"#
+            ),
+            "status lamp label and value must stay separated by explicit whitespace"
+        );
         assert!(out_a.contains("disabled"));
         assert!(out_a.contains("aria-disabled=\"true\""));
     }
