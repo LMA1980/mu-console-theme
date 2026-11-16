@@ -1026,6 +1026,8 @@ impl HtmlCoreSkin {
         w.close();
         w.tag("div").attr("class", "mu-dialog-footer").open();
         self.write_action_button(w, &d.enroll_action, "mu-btn mu-btn-primary");
+        let dismiss = ActionControl::new("dlg-passkey-dismiss", "Not Now", "dlg-passkey-dismiss");
+        self.write_action_button(w, &dismiss, "mu-btn");
         if let Some(sign_out) = &d.sign_out_action {
             self.write_action_button(w, sign_out, "mu-btn");
         }
@@ -1733,7 +1735,8 @@ pub(crate) mod tests {
 
         let gate_html = skin.render_dialog(&dialogs[0], SceneViewport::DESKTOP);
         assert!(gate_html.contains("<dialog open"));
-        assert!(gate_html.contains("data-dismissible=\"false\""));
+        assert!(gate_html.contains("data-dismissible=\"true\""));
+        assert!(gate_html.contains("data-control-id=\"dlg-passkey-dismiss\""));
         assert!(!gate_html.contains("mu-btn-close"));
 
         let profile_html = skin.render_dialog(&dialogs[1], SceneViewport::DESKTOP);

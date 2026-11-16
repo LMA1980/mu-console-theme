@@ -637,7 +637,7 @@ pub struct PlatformPanel {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[allow(clippy::large_enum_variant)]
 pub enum DialogModel {
-    /// Mandatory WebAuthn/passkey onboarding gate (`is_dismissible() == false`).
+    /// Guided WebAuthn/passkey onboarding modal (`is_dismissible() == true`).
     PasskeyEnrollmentGate(PasskeyEnrollmentDialog),
     /// `@user` identity and session overview modal.
     UserProfile(UserProfileDialog),
@@ -686,10 +686,10 @@ impl DialogModel {
         }
     }
 
-    /// False for blocking onboarding gates (`PasskeyEnrollmentGate`), true for dismissible modals.
+    /// Return `true` for dismissible modals (`PasskeyEnrollmentGate` can be dismissed to browse public views).
     #[must_use]
     pub const fn is_dismissible(&self) -> bool {
-        !matches!(self, Self::PasskeyEnrollmentGate(_))
+        true
     }
 
     /// Primary semantic tone of the dialog border and status accent.
@@ -815,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn passkey_gate_is_non_dismissible_while_other_dialogs_dismiss() {
+    fn passkey_gate_and_other_dialogs_are_dismissible() {
         let close = ActionControl::new("dlg-close", "Close", "dismiss-dialog");
         let gate = DialogModel::PasskeyEnrollmentGate(PasskeyEnrollmentDialog {
             dialog_id: "passkey-gate".into(),
@@ -828,7 +828,7 @@ mod tests {
             sign_out_action: None,
             tone: SemanticTone::Warn,
         });
-        assert!(!gate.is_dismissible());
+        assert!(gate.is_dismissible());
         assert_eq!(gate.dialog_kind(), "passkey-enrollment-gate");
 
         let profile = DialogModel::UserProfile(UserProfileDialog {

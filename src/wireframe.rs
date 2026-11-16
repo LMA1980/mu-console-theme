@@ -2476,7 +2476,8 @@ fn render_wf_dlg_passkey(
             d.account_subject, d.passkey_count
         ),
     );
-    let mut actions = vec![&d.enroll_action];
+    let dismiss = ActionControl::new("dlg-passkey-dismiss", "Not Now", "dlg-passkey-dismiss");
+    let mut actions = vec![&d.enroll_action, &dismiss];
     if let Some(so) = &d.sign_out_action {
         actions.push(so);
     }
