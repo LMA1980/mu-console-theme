@@ -1512,14 +1512,19 @@ fn draw_wf_button(w: &mut SvgWriter, r: Rect, ctrl: &ActionControl, role: &str, 
     }
     g.open();
 
-    let (fill, stroke, text_fill) = if ctrl.disabled {
-        (BG_DISABLED, BORDER_DISABLED, TEXT_DISABLED)
+    let (fill, stroke, text_fill, stroke_w) = if ctrl.disabled {
+        (BG_DISABLED, BORDER_DISABLED, TEXT_DISABLED, 1.0)
     } else if ctrl.selected == Some(true) || ctrl.pressed == Some(true) {
-        ("#1f3452", ctrl.tone.wireframe_stroke(), TEXT_PRIMARY)
+        let active_stroke = if ctrl.tone == SemanticTone::Neutral {
+            "#00f0ff"
+        } else {
+            ctrl.tone.wireframe_stroke()
+        };
+        ("#1f3452", active_stroke, "#00f0ff", 1.5)
     } else {
-        (BG_CONTROL, ctrl.tone.wireframe_stroke(), TEXT_PRIMARY)
+        (BG_CONTROL, ctrl.tone.wireframe_stroke(), TEXT_PRIMARY, 1.0)
     };
-    draw_wf_box(w, cr, vp, 4.0, fill, stroke, 1.0);
+    draw_wf_box(w, cr, vp, 4.0, fill, stroke, stroke_w);
     if cr.h >= 12.0 && cr.w >= 14.0 {
         let label = match &ctrl.badge {
             Some(b) => format!("{} ({b})", ctrl.label),
@@ -3352,5 +3357,50 @@ mod tests {
                 dlg.dialog_kind()
             );
         }
+    }
+
+    #[test]
+    fn wireframe_pressed_neutral_button_uses_cyan_active_stroke_and_fill() {
+        let mut w = SvgWriter::document(200.0, 60.0);
+        let active = ActionControl::new("profile-skin:html", "HTML Core", "profile-skin:html")
+            .with_pressed(true);
+        let inactive = ActionControl::new(
+            "profile-skin:wireframe",
+            "Wireframe SVG",
+            "profile-skin:wireframe",
+        )
+        .with_pressed(false);
+        draw_wf_button(
+            &mut w,
+            Rect::new(8.0, 8.0, 84.0, 24.0),
+            &active,
+            "button",
+            SceneViewport::DESKTOP,
+        );
+        draw_wf_button(
+            &mut w,
+            Rect::new(100.0, 8.0, 84.0, 24.0),
+            &inactive,
+            "button",
+            SceneViewport::DESKTOP,
+        );
+        let svg = w.finish_closing();
+        let doc = roxmltree::Document::parse(&svg).expect("valid SVG");
+        let active_group = doc
+            .descendants()
+            .find(|n| n.attribute("data-control-id") == Some("profile-skin:html"))
+            .expect("active control");
+        let rect = active_group
+            .descendants()
+            .find(|n| n.has_tag_name("rect"))
+            .expect("active rect");
+        assert_eq!(rect.attribute("fill"), Some("#1f3452"));
+        assert_eq!(rect.attribute("stroke"), Some("#00f0ff"));
+        assert_eq!(rect.attribute("stroke-width"), Some("1.5"));
+        let text = active_group
+            .descendants()
+            .find(|n| n.has_tag_name("text"))
+            .expect("active text");
+        assert_eq!(text.attribute("fill"), Some("#00f0ff"));
     }
 }
