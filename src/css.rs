@@ -129,6 +129,7 @@ pub fn tokens_css() -> String {
     s.push_str(".mu-mono{font-family:var(--font-crt)}\n");
     s.push_str("[data-tone=\"pass\"]{border-color:var(--status-pass)}[data-tone=\"warn\"]{border-color:var(--status-warn)}[data-tone=\"fail\"]{border-color:var(--status-fail)}[data-tone=\"info\"]{border-color:var(--status-info)}\n");
     s.push_str("dialog.mu-dialog{background:var(--bg-panel);color:var(--text-primary);border:1px solid var(--border-wireframe);border-radius:8px;width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow-y:auto;padding:0;margin:auto;font-family:var(--font-crt);box-sizing:border-box}\n");
+    s.push_str("dialog.mu-dialog[open]{position:fixed;inset:0;z-index:200;height:fit-content;box-shadow:0 24px 64px rgba(0,0,0,0.85),0 0 0 100vmax rgba(5,7,10,0.82)}\n");
     s.push_str("dialog.mu-dialog::backdrop{background:rgba(5,7,10,0.82)}\n");
     s.push_str(".mu-dialog-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-wireframe)}\n");
     s.push_str(".mu-dialog-body{display:flex;flex-direction:column;gap:12px;padding:16px}\n");
@@ -154,6 +155,7 @@ mod tests {
         assert!(css.contains("overflow:hidden;height:100dvh"));
         assert!(css.contains("html[data-skin=\"html\"]"));
         assert!(css.contains("overflow-y:auto"));
+        assert!(css.contains("dialog.mu-dialog[open]{position:fixed;inset:0;z-index:200"));
         assert!(css.contains("dialog.mu-dialog::backdrop"));
         assert!(css.contains("font-size:16px"));
         assert!(css.contains("[aria-disabled=\"true\"]"));
