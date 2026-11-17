@@ -515,16 +515,28 @@ impl HtmlCoreSkin {
         w.tag("div").attr("class", "mu-matrix-grid").open();
         for cell in &m.cells {
             if let Some(act) = &cell.action {
+                let effective_tone = matrix_cell_effective_tone(cell.tone, act.tone);
                 let tag = w
                     .tag("button")
                     .attr("type", "button")
                     .attr("class", "mu-matrix-cell mu-matrix-btn")
                     .attr("data-cell-id", &cell.id)
+                    .attr("data-tone", effective_tone.as_str())
                     .bool_attr("disabled", act.disabled);
-                let tag = act.fold_attrs(tag, |b, k, v| b.attr(k, v));
+                let tag = act.fold_attrs(
+                    tag,
+                    |b, k, v| {
+                        if k == "data-tone" {
+                            b
+                        } else {
+                            b.attr(k, v)
+                        }
+                    },
+                );
                 tag.open();
                 write_matrix_cell_inner(
                     w,
+                    effective_tone,
                     cell.signal,
                     &cell.label,
                     &cell.value,
@@ -539,6 +551,7 @@ impl HtmlCoreSkin {
                     .open();
                 write_matrix_cell_inner(
                     w,
+                    cell.tone,
                     cell.signal,
                     &cell.label,
                     &cell.value,
@@ -1034,6 +1047,42 @@ impl HtmlCoreSkin {
         w.close();
     }
 
+    fn write_role_badge_group(
+        w: &mut HtmlWriter,
+        heading: &str,
+        state_attr: &str,
+        aria_label: &str,
+        chip_class: &str,
+        badges: &[crate::scene::RoleBadge],
+    ) {
+        if badges.is_empty() {
+            return;
+        }
+        w.tag("div")
+            .attr("class", "mu-role-group")
+            .attr("data-role-state", state_attr)
+            .open();
+        w.tag("span")
+            .attr("class", "mu-role-group-label")
+            .text(heading);
+        w.tag("ul")
+            .attr("class", "mu-role-badges")
+            .attr("aria-label", aria_label)
+            .open();
+        for badge in badges {
+            let label = match &badge.detail {
+                Some(det) if !det.is_empty() => format!("{} ({det})", badge.role),
+                _ => badge.role.clone(),
+            };
+            w.tag("li")
+                .attr("class", chip_class)
+                .attr("data-tone", badge.tone.as_str())
+                .text(&label);
+        }
+        w.close();
+        w.close();
+    }
+
     fn write_dialog_user_profile(&self, w: &mut HtmlWriter, d: &UserProfileDialog) {
         w.tag("dl").attr("class", "mu-kv").open();
         write_kv_pair(w, "Handle", &d.handle, true);
@@ -1047,17 +1096,25 @@ impl HtmlCoreSkin {
         }
         w.close();
 
-        if !d.active_roles.is_empty() {
-            w.tag("ul")
-                .attr("class", "mu-role-badges")
-                .attr("aria-label", "Active roles")
-                .open();
-            for badge in &d.active_roles {
-                w.tag("li")
-                    .attr("class", "mu-role-chip")
-                    .attr("data-tone", badge.tone.as_str())
-                    .text(&badge.role);
-            }
+        Self::write_role_badge_group(
+            w,
+            "Active Roles",
+            "active",
+            "Active roles",
+            "mu-role-chip",
+            &d.active_roles,
+        );
+        Self::write_role_badge_group(
+            w,
+            "Dormant Roles",
+            "dormant",
+            "Dormant roles",
+            "mu-role-chip mu-role-chip-dormant",
+            &d.dormant_roles,
+        );
+        if let Some(manage_roles) = &d.manage_roles_action {
+            w.tag("div").attr("class", "mu-role-actions").open();
+            self.write_action_button(w, manage_roles, "mu-btn mu-btn-primary");
             w.close();
         }
 
@@ -1081,12 +1138,24 @@ impl HtmlCoreSkin {
             if d.step_up_verified { "yes" } else { "no" }
         ));
 
+        if let Some(err) = d.error_message.as_deref().filter(|s| !s.is_empty()) {
+            w.tag("div")
+                .attr("class", "mu-banner mu-dialog-error")
+                .attr("role", "alert")
+                .attr("data-tone", "fail")
+                .open();
+            write_signal_span(w, SignalGlyph::BlockFailed, SemanticTone::Fail);
+            w.tag("span").attr("class", "mu-banner-text").text(err);
+            w.close();
+        }
+
         w.tag("ul").attr("class", "mu-session-roles").open();
         for role in &d.roles {
             w.tag("li")
                 .attr("class", "mu-role-row")
                 .attr("data-tone", role.tone.as_str())
                 .attr("data-active", if role.active { "true" } else { "false" })
+                .attr_opt("data-disabled", role.action.disabled.then_some("true"))
                 .open();
             w.tag("div").attr("class", "mu-role-meta").open();
             w.tag("strong").text(&role.role);
@@ -1211,18 +1280,27 @@ fn dialog_dismiss_action(dialog: &DialogModel) -> Option<&ActionControl> {
     }
 }
 
+pub(crate) const fn matrix_cell_effective_tone(
+    cell_tone: SemanticTone,
+    action_tone: SemanticTone,
+) -> SemanticTone {
+    if !matches!(cell_tone, SemanticTone::Neutral) {
+        cell_tone
+    } else {
+        action_tone
+    }
+}
+
 fn write_matrix_cell_inner(
     w: &mut HtmlWriter,
+    tone: SemanticTone,
     signal: Option<SignalGlyph>,
     label: &str,
     value: &str,
     detail: Option<&str>,
 ) {
     if let Some(sig) = signal {
-        w.tag("span")
-            .attr("class", "mu-signal")
-            .attr("aria-hidden", "true")
-            .text(sig.symbol());
+        write_signal_span(w, sig, tone);
     }
     w.tag("span").attr("class", "mu-matrix-label").text(label);
     w.tag("strong").attr("class", "mu-matrix-value").text(value);
@@ -1671,8 +1749,18 @@ pub(crate) mod tests {
                     tone: SemanticTone::Pass,
                     detail: None,
                 }],
+                dormant_roles: vec![RoleBadge {
+                    role: "platform-admin".into(),
+                    tone: SemanticTone::Info,
+                    detail: Some("Timed".into()),
+                }],
                 session_expires_at: Some("2026-11-15T00:00:00Z".into()),
                 passkey_count: 2,
+                manage_roles_action: Some(ActionControl::new(
+                    "btn-manage-roles",
+                    "Manage Session Roles",
+                    "open-session-roles",
+                )),
                 lock_action: Some(ActionControl::new(
                     "btn-lock",
                     "Lock Console",
@@ -1687,15 +1775,32 @@ pub(crate) mod tests {
                 title: "Session Roles".into(),
                 subject_handle: "@operator".into(),
                 step_up_verified: true,
-                roles: vec![SessionRoleOption {
-                    role: "platform-admin".into(),
-                    description: "Manage worker units".into(),
-                    active: false,
-                    expires_at: Some("15m".into()),
-                    requires_step_up: true,
-                    tone: SemanticTone::Warn,
-                    action: ActionControl::new("grant-admin", "Grant", "grant-role"),
-                }],
+                roles: vec![
+                    SessionRoleOption {
+                        role: "platform-admin".into(),
+                        description: "Manage worker units".into(),
+                        active: false,
+                        expires_at: Some("15m".into()),
+                        requires_step_up: true,
+                        tone: SemanticTone::Warn,
+                        action: ActionControl::new("grant-admin", "Grant", "grant-role"),
+                    },
+                    SessionRoleOption {
+                        role: "super-operator".into(),
+                        description: "Unassigned catalog role".into(),
+                        active: false,
+                        expires_at: None,
+                        requires_step_up: false,
+                        tone: SemanticTone::Neutral,
+                        action: ActionControl::new(
+                            "unassigned-super",
+                            "Unassigned",
+                            "unassigned-role",
+                        )
+                        .disabled(true),
+                    },
+                ],
+                error_message: Some("Passkey verification was cancelled.".into()),
                 close_action: ActionControl::new("roles-close", "Close", "dismiss-dialog"),
             }),
             DialogModel::RiskConfirm(RiskConfirmDialog {
@@ -1756,5 +1861,108 @@ pub(crate) mod tests {
         let invite_html = skin.render_dialog(&dialogs[4], SceneViewport::DESKTOP);
         assert!(invite_html.contains("data-dialog-kind=\"invite-created-once\""));
         assert!(invite_html.contains("once-token"));
+    }
+
+    #[test]
+    fn status_matrix_buttons_emit_cell_data_tone_even_when_action_is_neutral_and_disabled() {
+        let mut scene = ConsoleScene::new("dashboard", "Dashboard");
+        scene.sections = vec![SceneSection::new("sec-dash", "Fleet").with_component(
+            SceneComponent::StatusMatrix(StatusMatrix {
+                id: "dash-cards".into(),
+                title: "Subsystems".into(),
+                cells: vec![
+                    MatrixCell {
+                        id: "card-maint".into(),
+                        label: "Registry".into(),
+                        value: "In Maintenance".into(),
+                        detail: None,
+                        tone: SemanticTone::Info,
+                        signal: Some(SignalGlyph::BlockRunning),
+                        action: Some(
+                            ActionControl::new(
+                                "dash-card:registry",
+                                "In Maintenance",
+                                "dash-card:registry",
+                            )
+                            .disabled(true),
+                        ),
+                    },
+                    MatrixCell {
+                        id: "card-offline".into(),
+                        label: "Delivery".into(),
+                        value: "Offline".into(),
+                        detail: None,
+                        tone: SemanticTone::Fail,
+                        signal: Some(SignalGlyph::BlockFailed),
+                        action: Some(
+                            ActionControl::new(
+                                "dash-card:delivery",
+                                "Offline",
+                                "dash-card:delivery",
+                            )
+                            .disabled(true),
+                        ),
+                    },
+                    MatrixCell {
+                        id: "card-live".into(),
+                        label: "CI".into(),
+                        value: "Live".into(),
+                        detail: None,
+                        tone: SemanticTone::Pass,
+                        signal: Some(SignalGlyph::TestPassed),
+                        action: Some(ActionControl::new("dash-card:ci", "Live", "dash-card:ci")),
+                    },
+                ],
+            }),
+        )];
+
+        let html = HtmlCoreSkin.render_scene(&scene, SceneViewport::DESKTOP);
+        assert!(html.contains(
+            r#"<button type="button" class="mu-matrix-cell mu-matrix-btn" data-cell-id="card-maint" data-tone="info" disabled data-control-id="dash-card:registry""#
+        ));
+        assert!(html.contains(
+            r#"<button type="button" class="mu-matrix-cell mu-matrix-btn" data-cell-id="card-offline" data-tone="fail" disabled data-control-id="dash-card:delivery""#
+        ));
+        assert!(html.contains(
+            r#"<button type="button" class="mu-matrix-cell mu-matrix-btn" data-cell-id="card-live" data-tone="pass" data-control-id="dash-card:ci""#
+        ));
+        // Ensure data-tone is not duplicated or left neutral from ActionControl defaults.
+        for btn_tag in html.split('<').filter(|t| t.starts_with("button ")) {
+            let open_end = btn_tag.find('>').expect("button closing bracket");
+            let open_tag = &btn_tag[..open_end];
+            assert_eq!(open_tag.matches("data-tone=").count(), 1, "{open_tag}");
+            assert!(!open_tag.contains(r#"data-tone="neutral""#), "{open_tag}");
+        }
+    }
+
+    #[test]
+    fn user_profile_and_session_roles_dialogs_render_dormant_roles_manage_btn_and_error_banner() {
+        let skin = HtmlCoreSkin;
+        let dialogs = sample_dialogs();
+
+        let profile_html = skin.render_dialog(&dialogs[1], SceneViewport::DESKTOP);
+        let active_pos = profile_html
+            .find(r#"data-role-state="active""#)
+            .expect("active roles section");
+        let dormant_pos = profile_html
+            .find(r#"data-role-state="dormant""#)
+            .expect("dormant roles section");
+        let manage_pos = profile_html
+            .find(r#"data-control-id="btn-manage-roles""#)
+            .expect("manage session roles button");
+        assert!(
+            active_pos < dormant_pos && dormant_pos < manage_pos,
+            "dormant roles must render right below active roles along with manage button"
+        );
+        assert!(profile_html.contains("platform-admin (Timed)"));
+        assert!(profile_html.contains("Manage Session Roles"));
+
+        let roles_html = skin.render_dialog(&dialogs[2], SceneViewport::DESKTOP);
+        assert!(roles_html
+            .contains(r#"<div class="mu-banner mu-dialog-error" role="alert" data-tone="fail">"#));
+        assert!(roles_html.contains("Passkey verification was cancelled."));
+        assert!(roles_html.contains(
+            r#"<li class="mu-role-row" data-tone="neutral" data-active="false" data-disabled="true">"#
+        ));
     }
 }

@@ -69,6 +69,15 @@ impl SemanticTone {
     }
 }
 
+const fn matrix_cell_stroke(tone: SemanticTone) -> &'static str {
+    match tone {
+        SemanticTone::Neutral | SemanticTone::Pass => BORDER,
+        SemanticTone::Warn => COLOR_WARN,
+        SemanticTone::Fail => COLOR_FAIL,
+        SemanticTone::Info => COLOR_INFO,
+    }
+}
+
 fn truncate_chars(s: &str, max_chars: usize) -> String {
     if max_chars == 0 {
         return String::new();
@@ -1714,6 +1723,46 @@ fn render_wf_repo_bar(w: &mut SvgWriter, scene: &ConsoleScene, r: Rect, vp: Scen
     w.close();
 }
 
+#[allow(clippy::too_many_arguments)]
+fn draw_wf_matrix_cell_text(
+    w: &mut SvgWriter,
+    x: f64,
+    y: f64,
+    max_w: f64,
+    font_px: f64,
+    label_fill: &str,
+    status_fill: &str,
+    label: &str,
+    value: &str,
+) {
+    if max_w < 8.0 {
+        return;
+    }
+    let prefix = format!("{label}: ");
+    let combined = format!("{prefix}{value}");
+    let fitted = fit_box(&combined, max_w, font_px);
+    let prefix_chars = prefix.chars().count();
+    let fitted_chars = fitted.chars().count();
+    let split_idx = fitted
+        .char_indices()
+        .nth(prefix_chars.min(fitted_chars))
+        .map_or(fitted.len(), |(idx, _)| idx);
+    let (head, tail) = fitted.split_at(split_idx);
+    w.tag("text")
+        .attr("x", x)
+        .attr("y", y)
+        .attr("font-family", "MuCRT, monospace")
+        .attr("font-size", font_px)
+        .open();
+    if !head.is_empty() {
+        w.tag("tspan").attr("fill", label_fill).text(head);
+    }
+    if !tail.is_empty() {
+        w.tag("tspan").attr("fill", status_fill).text(tail);
+    }
+    w.close();
+}
+
 #[allow(clippy::cast_precision_loss)]
 fn render_wf_status_matrix(w: &mut SvgWriter, m: &StatusMatrix, r: Rect, vp: SceneViewport) {
     w.tag("g").attr("data-component-id", &m.id).open();
@@ -1750,9 +1799,25 @@ fn render_wf_status_matrix(w: &mut SvgWriter, m: &StatusMatrix, r: Rect, vp: Sce
                 cw,
                 ch.min((grid.bottom() - (grid.y + row as f64 * (ch + gap))).max(0.0)),
             );
-            draw_wf_box(w, cr, vp, 3.0, BG_PANEL, cell.tone.wireframe_stroke(), 1.0);
+            let is_disabled = cell.action.as_ref().is_some_and(|act| act.disabled);
+            let effective_tone = cell.action.as_ref().map_or(cell.tone, |act| {
+                crate::html::matrix_cell_effective_tone(cell.tone, act.tone)
+            });
+            w.tag("g")
+                .attr("data-cell-id", &cell.id)
+                .attr("data-tone", effective_tone.as_str())
+                .open();
+            draw_wf_box(
+                w,
+                cr,
+                vp,
+                3.0,
+                BG_PANEL,
+                matrix_cell_stroke(effective_tone),
+                1.0,
+            );
             if let Some(sig) = cell.signal {
-                render_signal_shape(w, cr.x + 10.0, cr.y + cr.h * 0.5, sig, cell.tone);
+                render_signal_shape(w, cr.x + 10.0, cr.y + cr.h * 0.5, sig, effective_tone);
             }
             let text_x = if cell.signal.is_some() {
                 cr.x + 20.0
@@ -1765,16 +1830,25 @@ fn render_wf_status_matrix(w: &mut SvgWriter, m: &StatusMatrix, r: Rect, vp: Sce
                 0.0
             };
             let text_w = (cr.right() - text_x - btn_w - 6.0).max(8.0);
-            draw_wf_text(
+            let label_fill = if is_disabled {
+                TEXT_DISABLED
+            } else {
+                TEXT_PRIMARY
+            };
+            draw_wf_matrix_cell_text(
                 w,
                 text_x,
                 cr.y + cr.h * 0.5 + 3.5,
                 text_w,
                 10.0,
-                TEXT_PRIMARY,
-                &format!("{}: {}", cell.label, cell.value),
+                label_fill,
+                effective_tone.wireframe_fg(),
+                &cell.label,
+                &cell.value,
             );
             if let Some(act) = &cell.action {
+                let mut synced_act = act.clone();
+                synced_act.tone = effective_tone;
                 draw_wf_button(
                     w,
                     Rect::new(
@@ -1783,11 +1857,12 @@ fn render_wf_status_matrix(w: &mut SvgWriter, m: &StatusMatrix, r: Rect, vp: Sce
                         btn_w,
                         (cr.h - 6.0).max(10.0),
                     ),
-                    act,
+                    &synced_act,
                     "button",
                     vp,
                 );
             }
+            w.close();
         }
     }
     w.close();
@@ -2496,10 +2571,20 @@ fn render_wf_dlg_profile(
     footer: Rect,
     vp: SceneViewport,
 ) {
+    let btn_w = if d.manage_roles_action.is_some() {
+        (body.w * 0.40).clamp(112.0, 168.0)
+    } else {
+        0.0
+    };
+    let text_w = if btn_w > 0.0 {
+        (body.w - btn_w - 8.0).max(24.0)
+    } else {
+        body.w
+    };
     draw_wf_text(
         w,
         body.x,
-        body.y + 14.0,
+        body.y + 12.0,
         body.w,
         10.5,
         TEXT_PRIMARY,
@@ -2508,16 +2593,47 @@ fn render_wf_dlg_profile(
             d.handle, d.subject_id, d.passkey_count
         ),
     );
-    let roles_joined: Vec<&str> = d.active_roles.iter().map(|r| r.role.as_str()).collect();
+    let active_joined: Vec<&str> = d.active_roles.iter().map(|r| r.role.as_str()).collect();
+    let active_summary = if active_joined.is_empty() {
+        "Active Roles: none".to_owned()
+    } else {
+        format!("Active Roles: {}", active_joined.join(", "))
+    };
     draw_wf_text(
         w,
         body.x,
-        body.y + 34.0,
-        body.w,
+        body.y + 27.0,
+        text_w,
         10.0,
         TEXT_MUTED,
-        &format!("Roles: {}", roles_joined.join(", ")),
+        &active_summary,
     );
+    if !d.dormant_roles.is_empty() {
+        let dormant_joined: Vec<&str> = d.dormant_roles.iter().map(|r| r.role.as_str()).collect();
+        draw_wf_text(
+            w,
+            body.x,
+            body.y + 40.0,
+            text_w,
+            10.0,
+            TEXT_DISABLED,
+            &format!("Dormant Roles: {}", dormant_joined.join(", ")),
+        );
+    }
+    if let Some(manage) = &d.manage_roles_action {
+        draw_wf_button(
+            w,
+            Rect::new(
+                (body.right() - btn_w).max(body.x),
+                body.y + 18.0,
+                btn_w,
+                22.0,
+            ),
+            manage,
+            "button",
+            vp,
+        );
+    }
     let mut actions: Vec<&ActionControl> = Vec::new();
     if let Some(lock) = &d.lock_action {
         actions.push(lock);
@@ -2553,7 +2669,34 @@ fn render_wf_dlg_roles(
             if d.step_up_verified { "yes" } else { "no" }
         ),
     );
-    let list_y = body.y + 20.0;
+    let mut list_y = body.y + 20.0;
+    if let Some(err) = d.error_message.as_deref().filter(|s| !s.is_empty()) {
+        let err_r = clamp_rect(Rect::new(body.x, list_y, body.w, 22.0), vp);
+        w.tag("g")
+            .attr("class", "mu-banner mu-dialog-error")
+            .attr("role", "alert")
+            .attr("data-tone", "fail")
+            .open();
+        draw_wf_box(w, err_r, vp, 3.0, "#261418", COLOR_FAIL, 1.0);
+        render_signal_shape(
+            w,
+            err_r.x + 10.0,
+            err_r.y + err_r.h * 0.5,
+            SignalGlyph::BlockFailed,
+            SemanticTone::Fail,
+        );
+        draw_wf_text(
+            w,
+            err_r.x + 20.0,
+            err_r.y + err_r.h * 0.5 + 3.5,
+            (err_r.w - 26.0).max(8.0),
+            9.5,
+            COLOR_FAIL,
+            err,
+        );
+        w.close();
+        list_y += 26.0;
+    }
     let avail_h = (body.bottom() - list_y).max(0.0);
     let row_h = (avail_h / d.roles.len().max(1) as f64).clamp(16.0, 26.0);
     for (i, role) in d.roles.iter().enumerate() {
@@ -2561,28 +2704,56 @@ fn render_wf_dlg_roles(
         if ry + row_h > body.bottom() + 0.5 {
             break;
         }
-        let btn_w = (body.w * 0.28).clamp(52.0, 90.0);
+        let is_unassigned_or_disabled = !role.active && role.action.disabled;
+        let row_r = Rect::new(body.x, ry, body.w, (row_h - 2.0).max(12.0));
+        let row_fill = if is_unassigned_or_disabled {
+            BG_DISABLED
+        } else {
+            BG_PANEL
+        };
+        w.tag("g")
+            .attr("class", "mu-role-row")
+            .attr("data-tone", role.tone.as_str())
+            .attr("data-active", if role.active { "true" } else { "false" })
+            .attr_opt("data-disabled", role.action.disabled.then_some("true"))
+            .open();
+        draw_wf_box(
+            w,
+            row_r,
+            vp,
+            3.0,
+            row_fill,
+            role.tone.wireframe_stroke(),
+            1.0,
+        );
+        let btn_w = (body.w * 0.30).clamp(64.0, 128.0);
+        let label_fill = if is_unassigned_or_disabled && role.tone == SemanticTone::Neutral {
+            TEXT_DISABLED
+        } else {
+            role.tone.wireframe_fg()
+        };
         draw_wf_text(
             w,
-            body.x,
-            ry + row_h * 0.5 + 3.0,
-            (body.w - btn_w - 8.0).max(8.0),
+            row_r.x + 6.0,
+            row_r.y + row_r.h * 0.5 + 3.5,
+            (row_r.w - btn_w - 12.0).max(8.0),
             10.0,
-            role.tone.wireframe_fg(),
+            label_fill,
             &format!("{}: {}", role.role, role.description),
         );
         draw_wf_button(
             w,
             Rect::new(
-                (body.right() - btn_w).max(body.x),
-                ry + 1.0,
+                (row_r.right() - btn_w - 2.0).max(row_r.x),
+                row_r.y + 1.0,
                 btn_w,
-                (row_h - 2.0).max(12.0),
+                (row_r.h - 2.0).max(10.0),
             ),
             &role.action,
             "button",
             vp,
         );
+        w.close();
     }
     render_wf_action_strip(w, footer, &[&d.close_action], "button", vp);
 }
@@ -2875,6 +3046,7 @@ impl SceneRenderer for WireframeSkin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scene::{MatrixCell, SceneBanner};
     use crate::skin::{ScreenRow, SelectorOption};
 
     fn render_sample(skin: &dyn Skin) -> String {
@@ -3402,5 +3574,114 @@ mod tests {
             .find(|n| n.has_tag_name("text"))
             .expect("active text");
         assert_eq!(text.attribute("fill"), Some("#00f0ff"));
+    }
+
+    #[test]
+    fn wireframe_matrix_cards_enforce_status_borders_and_title_only_disabled_dimming() {
+        let mut scene = ConsoleScene::new("dashboard", "Dashboard");
+        scene.banners = vec![SceneBanner {
+            id: "banner-pass".into(),
+            tone: SemanticTone::Pass,
+            title: "Nominal".into(),
+            message: "All clusters nominal.".into(),
+            action: None,
+        }];
+        scene.sections = vec![SceneSection::new("sec-dash", "Fleet").with_component(
+            SceneComponent::StatusMatrix(StatusMatrix {
+                id: "dash-cards".into(),
+                title: "Subsystems".into(),
+                cells: vec![
+                    MatrixCell {
+                        id: "cell-info".into(),
+                        label: "Registry".into(),
+                        value: "In Maintenance".into(),
+                        detail: None,
+                        tone: SemanticTone::Info,
+                        signal: Some(SignalGlyph::BlockRunning),
+                        action: Some(
+                            ActionControl::new("dash-card:reg", "In Maintenance", "dash-card:reg")
+                                .disabled(true),
+                        ),
+                    },
+                    MatrixCell {
+                        id: "cell-fail".into(),
+                        label: "Delivery".into(),
+                        value: "Offline".into(),
+                        detail: None,
+                        tone: SemanticTone::Fail,
+                        signal: Some(SignalGlyph::BlockFailed),
+                        action: Some(
+                            ActionControl::new("dash-card:cd", "Offline", "dash-card:cd")
+                                .disabled(true),
+                        ),
+                    },
+                    MatrixCell {
+                        id: "cell-pass".into(),
+                        label: "CI".into(),
+                        value: "Live".into(),
+                        detail: None,
+                        tone: SemanticTone::Pass,
+                        signal: Some(SignalGlyph::TestPassed),
+                        action: Some(
+                            ActionControl::new("dash-card:ci", "Live", "dash-card:ci")
+                                .disabled(true),
+                        ),
+                    },
+                ],
+            }),
+        )];
+
+        let svg = WireframeSkin.render_scene(&scene, SceneViewport::DESKTOP);
+        assert_svg_strictly_bounded(&svg, SceneViewport::DESKTOP);
+        let doc = roxmltree::Document::parse(&svg).expect("valid SVG");
+
+        // Banner pass tone keeps green border (#33f08a).
+        assert!(svg.contains("stroke=\"#33f08a\""));
+
+        let check_cell =
+            |cell_id: &str, expected_tone: &str, expected_stroke: &str, expected_fg: &str| {
+                let group = doc
+                    .descendants()
+                    .find(|n| n.attribute("data-cell-id") == Some(cell_id))
+                    .unwrap_or_else(|| panic!("missing cell {cell_id}"));
+                assert_eq!(group.attribute("data-tone"), Some(expected_tone));
+                let card_rect = group
+                    .children()
+                    .find(|n| n.has_tag_name("rect"))
+                    .expect("card rect");
+                assert_eq!(card_rect.attribute("stroke"), Some(expected_stroke));
+                let tspans: Vec<_> = group
+                    .descendants()
+                    .filter(|n| n.has_tag_name("tspan"))
+                    .collect();
+                assert_eq!(tspans.len(), 2);
+                assert_eq!(tspans[0].attribute("fill"), Some(TEXT_DISABLED));
+                assert_eq!(tspans[1].attribute("fill"), Some(expected_fg));
+            };
+
+        check_cell("cell-info", "info", COLOR_INFO, COLOR_INFO);
+        check_cell("cell-fail", "fail", COLOR_FAIL, COLOR_FAIL);
+        check_cell("cell-pass", "pass", BORDER, COLOR_PASS);
+    }
+
+    #[test]
+    fn wireframe_role_dialogs_render_dormant_roles_manage_action_and_inline_error_banner() {
+        let dialogs = crate::html::tests::sample_dialogs();
+        let profile_svg = WireframeSkin.render_dialog(&dialogs[1], SceneViewport::DESKTOP);
+        assert_svg_strictly_bounded(&profile_svg, SceneViewport::DESKTOP);
+        assert!(profile_svg.contains("Active Roles: release-operator"));
+        assert!(profile_svg.contains("Dormant Roles: platform-admin"));
+        assert!(profile_svg.contains("Manage Session Roles"));
+        let phone_profile = WireframeSkin.render_dialog(&dialogs[1], SceneViewport::PHONE);
+        assert_svg_strictly_bounded(&phone_profile, SceneViewport::PHONE);
+
+        let roles_svg = WireframeSkin.render_dialog(&dialogs[2], SceneViewport::DESKTOP);
+        assert_svg_strictly_bounded(&roles_svg, SceneViewport::DESKTOP);
+        assert!(roles_svg.contains("role=\"alert\""));
+        assert!(roles_svg.contains("data-tone=\"fail\""));
+        assert!(roles_svg.contains("Passkey verification was cancelled."));
+        assert!(roles_svg.contains("data-disabled=\"true\""));
+        let phone_roles = WireframeSkin.render_dialog(&dialogs[2], SceneViewport::PHONE);
+        assert_svg_strictly_bounded(&phone_roles, SceneViewport::PHONE);
     }
 }

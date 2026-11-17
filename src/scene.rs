@@ -735,8 +735,10 @@ pub struct UserProfileDialog {
     pub subject_id: String,
     pub email: Option<String>,
     pub active_roles: Vec<RoleBadge>,
+    pub dormant_roles: Vec<RoleBadge>,
     pub session_expires_at: Option<String>,
     pub passkey_count: u32,
+    pub manage_roles_action: Option<ActionControl>,
     pub lock_action: Option<ActionControl>,
     pub manage_passkeys_action: Option<ActionControl>,
     pub sign_out_action: Option<ActionControl>,
@@ -751,6 +753,7 @@ pub struct SessionRolesDialog {
     pub subject_handle: String,
     pub step_up_verified: bool,
     pub roles: Vec<SessionRoleOption>,
+    pub error_message: Option<String>,
     pub close_action: ActionControl,
 }
 
@@ -842,8 +845,18 @@ mod tests {
                 tone: SemanticTone::Pass,
                 detail: None,
             }],
+            dormant_roles: vec![RoleBadge {
+                role: "platform-admin".into(),
+                tone: SemanticTone::Info,
+                detail: Some("Timed".into()),
+            }],
             session_expires_at: None,
             passkey_count: 2,
+            manage_roles_action: Some(ActionControl::new(
+                "profile-manage-roles",
+                "Manage Session Roles",
+                "open-session-roles",
+            )),
             lock_action: None,
             manage_passkeys_action: None,
             sign_out_action: None,
