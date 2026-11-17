@@ -116,7 +116,8 @@ pub fn tokens_css() -> String {
         ".mu-trainway-svg,.mu-sparkline-svg{width:100%;height:auto;display:block;max-width:100%}\n",
     );
     s.push_str(".mu-matrix-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}\n");
-    s.push_str(".mu-matrix-cell{display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border-wireframe);border-radius:4px;text-align:left;color:var(--text-primary)}\n");
+    s.push_str(".mu-matrix-cell{display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border-wireframe);border-radius:4px;text-align:left;color:var(--text-primary);font-family:var(--font-crt)}\n");
+    s.push_str(".mu-matrix-btn{cursor:pointer}\n");
     s.push_str(".mu-table-wrap{overflow-x:auto;max-width:100%}\n");
     s.push_str(".mu-table{width:100%;border-collapse:collapse;font-size:13px}\n");
     s.push_str(".mu-table th,.mu-table td{padding:8px 10px;border-bottom:1px solid var(--border-wireframe);text-align:left;vertical-align:middle}\n");
@@ -131,6 +132,19 @@ pub fn tokens_css() -> String {
     s.push_str(".mu-kv-row{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:1px solid var(--border-wireframe)}\n");
     s.push_str(".mu-mono{font-family:var(--font-crt)}\n");
     s.push_str("[data-tone=\"pass\"]{border-color:var(--status-pass)}[data-tone=\"warn\"]{border-color:var(--status-warn)}[data-tone=\"fail\"]{border-color:var(--status-fail)}[data-tone=\"info\"]{border-color:var(--status-info)}\n");
+    s.push_str(".mu-matrix-cell[disabled],.mu-matrix-cell[aria-disabled=\"true\"]{background:var(--bg-panel);border-color:var(--border-wireframe);color:var(--text-primary);cursor:not-allowed;opacity:1}\n");
+    s.push_str(".mu-matrix-cell[disabled] .mu-matrix-label,.mu-matrix-cell[aria-disabled=\"true\"] .mu-matrix-label{color:var(--text-disabled)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"pass\"],.mu-matrix-cell[data-tone=\"pass\"][disabled],.mu-matrix-cell[data-tone=\"pass\"][aria-disabled=\"true\"]{border-color:var(--border-wireframe)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"warn\"],.mu-matrix-cell[data-tone=\"warn\"][disabled],.mu-matrix-cell[data-tone=\"warn\"][aria-disabled=\"true\"]{border-color:var(--status-warn)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"fail\"],.mu-matrix-cell[data-tone=\"fail\"][disabled],.mu-matrix-cell[data-tone=\"fail\"][aria-disabled=\"true\"]{border-color:var(--status-fail)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"info\"],.mu-matrix-cell[data-tone=\"info\"][disabled],.mu-matrix-cell[data-tone=\"info\"][aria-disabled=\"true\"]{border-color:var(--status-info)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"pass\"] .mu-signal,.mu-matrix-cell[data-tone=\"pass\"] .mu-matrix-value,.mu-signal[data-tone=\"pass\"]{color:var(--status-pass)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"warn\"] .mu-signal,.mu-matrix-cell[data-tone=\"warn\"] .mu-matrix-value,.mu-signal[data-tone=\"warn\"]{color:var(--status-warn)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"fail\"] .mu-signal,.mu-matrix-cell[data-tone=\"fail\"] .mu-matrix-value,.mu-signal[data-tone=\"fail\"]{color:var(--status-fail)}\n");
+    s.push_str(".mu-matrix-cell[data-tone=\"info\"] .mu-signal,.mu-matrix-cell[data-tone=\"info\"] .mu-matrix-value,.mu-signal[data-tone=\"info\"]{color:var(--status-info)}\n");
+    s.push_str(".mu-banner[data-tone=\"pass\"]{border-color:var(--status-pass)}\n");
+    s.push_str(".mu-banner[data-tone=\"fail\"]{border-color:var(--status-fail);background:#261418;color:var(--text-primary)}\n");
+    s.push_str(".mu-dialog-error{justify-content:flex-start}\n");
     s.push_str("dialog.mu-dialog{background:var(--bg-panel);color:var(--text-primary);border:1px solid var(--border-wireframe);border-radius:8px;width:min(560px,calc(100vw - 24px));max-height:calc(100dvh - 32px);overflow-y:auto;padding:0;margin:auto;font-family:var(--font-crt);box-sizing:border-box}\n");
     s.push_str("dialog.mu-dialog[open]{position:fixed;inset:0;z-index:200;height:fit-content;box-shadow:0 24px 64px rgba(0,0,0,0.85),0 0 0 100vmax rgba(5,7,10,0.82)}\n");
     s.push_str("dialog.mu-dialog::backdrop{background:rgba(5,7,10,0.82)}\n");
@@ -144,6 +158,21 @@ pub fn tokens_css() -> String {
     s.push_str(".mu-pref-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;font-size:13px}\n");
     s.push_str(".mu-pref-current{font-size:12px;color:var(--accent-neon-cyan);font-weight:700}\n");
     s.push_str(".mu-btn-row{display:flex;flex-wrap:wrap;gap:8px}\n");
+    s.push_str(".mu-role-group{display:flex;flex-direction:column;gap:6px}\n");
+    s.push_str(".mu-role-group-label{font-size:12px;color:var(--text-muted);font-weight:700}\n");
+    s.push_str(".mu-role-actions{display:flex;flex-wrap:wrap;gap:8px}\n");
+    s.push_str(".mu-role-chip-dormant{color:var(--text-muted);border-style:dashed}\n");
+    s.push_str(
+        ".mu-role-meta{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1 1 auto}\n",
+    );
+    s.push_str(".mu-role-desc{font-size:12px;color:var(--text-muted)}\n");
+    s.push_str(".mu-role-expiry{font-size:12px;color:var(--status-warn)}\n");
+    s.push_str(".mu-role-stepup{font-size:12px;color:var(--status-info)}\n");
+    s.push_str(".mu-role-row[data-disabled=\"true\"]{background:var(--bg-disabled);opacity:1}\n");
+    s.push_str(".mu-role-row[data-active=\"false\"][data-disabled=\"true\"] strong{color:var(--text-disabled)}\n");
+    s.push_str(
+        ".mu-role-row .mu-btn[disabled],.mu-role-row .mu-btn[aria-disabled=\"true\"]{opacity:1}\n",
+    );
     s.push_str(".mu-invite-secret{padding:10px;background:var(--bg-screen);border:1px solid var(--status-pass);border-radius:4px;overflow-x:auto;word-break:break-all}\n");
     s.push_str("@media (max-width:520px){.mu-console-scene{padding:8px 10px 20px}.mu-scene-grid{grid-template-columns:1fr}.mu-btn,.mu-tab{min-width:44px;min-height:44px}input,select,textarea,.mu-input{font-size:16px}}\n");
     s
@@ -181,6 +210,22 @@ mod tests {
         assert!(css.contains("html[data-crt-font=\"opendyslexic\"],#muconsole-shell[data-crt-font=\"opendyslexic\"]{--font-crt:\"OpenDyslexicM Nerd Font Mono\",\"MuCRT\",monospace}"));
         assert!(css.contains("html[data-crt-font=\"opendyslexic\"] svg text,#muconsole-shell[data-crt-font=\"opendyslexic\"] svg text{font-family:var(--font-crt)}"));
         assert_eq!(css, tokens_css(), "deterministic");
+    }
+
+    #[test]
+    fn matrix_cell_and_role_dialog_css_preserve_status_borders_without_washout() {
+        let css = tokens_css();
+        assert!(css.contains(".mu-matrix-cell[disabled],.mu-matrix-cell[aria-disabled=\"true\"]{background:var(--bg-panel);border-color:var(--border-wireframe);color:var(--text-primary);cursor:not-allowed;opacity:1}"));
+        assert!(css.contains(".mu-matrix-cell[disabled] .mu-matrix-label,.mu-matrix-cell[aria-disabled=\"true\"] .mu-matrix-label{color:var(--text-disabled)}"));
+        assert!(css.contains(".mu-matrix-cell[data-tone=\"pass\"],.mu-matrix-cell[data-tone=\"pass\"][disabled],.mu-matrix-cell[data-tone=\"pass\"][aria-disabled=\"true\"]{border-color:var(--border-wireframe)}"));
+        assert!(css.contains(".mu-matrix-cell[data-tone=\"info\"],.mu-matrix-cell[data-tone=\"info\"][disabled],.mu-matrix-cell[data-tone=\"info\"][aria-disabled=\"true\"]{border-color:var(--status-info)}"));
+        assert!(css.contains(".mu-matrix-cell[data-tone=\"fail\"],.mu-matrix-cell[data-tone=\"fail\"][disabled],.mu-matrix-cell[data-tone=\"fail\"][aria-disabled=\"true\"]{border-color:var(--status-fail)}"));
+        assert!(css.contains(".mu-matrix-cell[data-tone=\"pass\"] .mu-signal,.mu-matrix-cell[data-tone=\"pass\"] .mu-matrix-value,.mu-signal[data-tone=\"pass\"]{color:var(--status-pass)}"));
+        assert!(css.contains(".mu-banner[data-tone=\"pass\"]{border-color:var(--status-pass)}"));
+        assert!(css.contains(".mu-banner[data-tone=\"fail\"]{border-color:var(--status-fail)"));
+        assert!(css.contains(".mu-role-chip-dormant{"));
+        assert!(css.contains(".mu-role-row[data-disabled=\"true\"]{"));
+        assert!(css.contains(".mu-role-row .mu-btn[disabled]"));
     }
 
     #[test]
