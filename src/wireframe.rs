@@ -2999,7 +2999,13 @@ impl SceneRenderer for WireframeSkin {
 
         let sec_n = scene.sections.len();
         if sec_n > 0 {
-            let cols = if !viewport.is_phone() && viewport.width >= 960.0 && sec_n > 1 {
+            let is_stacked_dashboard = scene.active_area.eq_ignore_ascii_case("dashboard")
+                || scene.sections.iter().all(|s| s.id.starts_with("sec-dash-"));
+            let cols = if !viewport.is_phone()
+                && viewport.width >= 960.0
+                && sec_n > 1
+                && !is_stacked_dashboard
+            {
                 2
             } else {
                 1
@@ -3683,5 +3689,46 @@ mod tests {
         assert!(roles_svg.contains("data-disabled=\"true\""));
         let phone_roles = WireframeSkin.render_dialog(&dialogs[2], SceneViewport::PHONE);
         assert_svg_strictly_bounded(&phone_roles, SceneViewport::PHONE);
+    }
+
+    #[test]
+    fn wireframe_dashboard_stacks_sections_full_width_single_column_on_desktop() {
+        let mut scene = ConsoleScene::new("dashboard", "Dashboard");
+        scene.sections = vec![
+            SceneSection::new("sec-dash-applications", "Applications"),
+            SceneSection::new("sec-dash-fleet", "Fleet"),
+            SceneSection::new("sec-dash-attention", "Needs Attention"),
+        ];
+        let svg = WireframeSkin.render_scene(&scene, SceneViewport::DESKTOP);
+        assert_svg_strictly_bounded(&svg, SceneViewport::DESKTOP);
+        let doc = roxmltree::Document::parse(&svg).expect("valid SVG");
+        let panel_rects: Vec<(f64, f64, f64)> = [
+            "sec-dash-applications",
+            "sec-dash-fleet",
+            "sec-dash-attention",
+        ]
+        .into_iter()
+        .map(|sec_id| {
+            let group = doc
+                .descendants()
+                .find(|n| n.attribute("data-section-id") == Some(sec_id))
+                .unwrap_or_else(|| panic!("missing section {sec_id}"));
+            let rect = group
+                .descendants()
+                .find(|n| n.has_tag_name("rect"))
+                .expect("section panel rect");
+            let x: f64 = rect.attribute("x").unwrap().parse().unwrap();
+            let y: f64 = rect.attribute("y").unwrap().parse().unwrap();
+            let w: f64 = rect.attribute("width").unwrap().parse().unwrap();
+            (x, y, w)
+        })
+        .collect();
+        assert!((panel_rects[0].0 - panel_rects[1].0).abs() < 1e-6);
+        assert!((panel_rects[1].0 - panel_rects[2].0).abs() < 1e-6);
+        assert!((panel_rects[0].2 - panel_rects[1].2).abs() < 1e-6);
+        assert!((panel_rects[1].2 - panel_rects[2].2).abs() < 1e-6);
+        assert!(panel_rects[0].2 > SceneViewport::DESKTOP.width - 40.0);
+        assert!(panel_rects[0].1 < panel_rects[1].1);
+        assert!(panel_rects[1].1 < panel_rects[2].1);
     }
 }

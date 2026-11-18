@@ -108,6 +108,7 @@ pub fn tokens_css() -> String {
     s.push_str(":focus-visible{outline:2px solid var(--accent-neon-cyan);outline-offset:2px}\n");
     s.push_str(".mu-scene-main{display:flex;flex-direction:column;gap:14px;flex:1 1 auto}\n");
     s.push_str(".mu-scene-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:16px;align-items:start}\n");
+    s.push_str(".mu-section[data-full-width=\"true\"],.mu-section[data-section-id^=\"sec-dash-\"]{grid-column:1 / -1}\n");
     s.push_str(".mu-section,.mu-card{background:var(--bg-panel);border:1px solid var(--border-wireframe);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:12px;box-sizing:border-box}\n");
     s.push_str(".mu-card{background:var(--bg-screen)}\n");
     s.push_str(".mu-card-bar,.mu-section-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}\n");
@@ -226,6 +227,9 @@ mod tests {
         assert!(css.contains(".mu-role-chip-dormant{"));
         assert!(css.contains(".mu-role-row[data-disabled=\"true\"]{"));
         assert!(css.contains(".mu-role-row .mu-btn[disabled]"));
+        assert!(css.contains(
+            ".mu-section[data-full-width=\"true\"],.mu-section[data-section-id^=\"sec-dash-\"]{grid-column:1 / -1}"
+        ));
     }
 
     #[test]

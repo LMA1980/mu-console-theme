@@ -475,6 +475,10 @@ impl HtmlCoreSkin {
         w.tag("section")
             .attr("class", "mu-section")
             .attr("data-section-id", &section.id)
+            .attr_opt(
+                "data-full-width",
+                section.id.starts_with("sec-dash-").then_some("true"),
+            )
             .attr("data-tone", section.tone.as_str())
             .attr("aria-label", label)
             .open();
@@ -1964,5 +1968,21 @@ pub(crate) mod tests {
         assert!(roles_html.contains(
             r#"<li class="mu-role-row" data-tone="neutral" data-active="false" data-disabled="true">"#
         ));
+    }
+
+    #[test]
+    fn dashboard_sections_emit_data_full_width_and_non_dashboard_sections_do_not() {
+        let mut scene = ConsoleScene::new("dashboard", "Dashboard");
+        scene.sections = vec![
+            SceneSection::new("sec-dash-applications", "Applications"),
+            SceneSection::new("sec-dash-fleet", "Fleet"),
+            SceneSection::new("sec-dash-attention", "Needs Attention"),
+            SceneSection::new("sec-overview", "Non-Dashboard"),
+        ];
+        let html = HtmlCoreSkin.render_scene(&scene, SceneViewport::DESKTOP);
+        assert!(html.contains(r#"data-section-id="sec-dash-applications" data-full-width="true""#));
+        assert!(html.contains(r#"data-section-id="sec-dash-fleet" data-full-width="true""#));
+        assert!(html.contains(r#"data-section-id="sec-dash-attention" data-full-width="true""#));
+        assert!(!html.contains(r#"data-section-id="sec-overview" data-full-width="true""#));
     }
 }
