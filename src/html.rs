@@ -678,6 +678,7 @@ impl HtmlCoreSkin {
                 .attr("class", "mu-log-line")
                 .attr("data-tone", entry.level.as_str())
                 .attr_opt("data-trace-id", entry.trace_id.as_deref())
+                .attr_opt("data-log-key", entry.anchor_key.as_deref())
                 .open();
             if let Some(ln) = entry.line_no {
                 w.tag("span")
@@ -1655,6 +1656,7 @@ pub(crate) mod tests {
                         signal: Some(SignalGlyph::TestRunning),
                         text: "Applying deployment manifest".into(),
                         trace_id: Some("tr-99".into()),
+                        anchor_key: Some("1700000000000:abcd".into()),
                         action: Some(ActionControl::new("tr-99-btn", "Trace", "open-trace")),
                     }],
                     controls: vec![ActionControl::new("log-wrap", "Wrap", "toggle-wrap")],
@@ -1710,6 +1712,7 @@ pub(crate) mod tests {
         assert!(out_a.contains("<table class=\"mu-table\">"));
         assert!(out_a.contains("data-component-id=\"mat-nodes\""));
         assert!(out_a.contains("data-component-id=\"log-cd\""));
+        assert!(out_a.contains("data-log-key=\"1700000000000:abcd\""));
         assert!(out_a.contains("data-component-id=\"tw-main\""));
         assert!(out_a.contains("data-component-id=\"gate-cd\""));
         assert!(out_a.contains("data-component-id=\"spk-pass\""));
