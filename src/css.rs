@@ -123,6 +123,7 @@ pub fn tokens_css() -> String {
     s.push_str(".mu-table{width:100%;border-collapse:collapse;font-size:13px}\n");
     s.push_str(".mu-table th,.mu-table td{padding:8px 10px;border-bottom:1px solid var(--border-wireframe);text-align:left;vertical-align:middle}\n");
     s.push_str(".mu-log-lines{margin:0;padding:8px 10px;list-style:none;background:var(--bg-screen);border:1px solid var(--border-wireframe);border-radius:4px;font-size:12.5px;overflow-x:auto}\n");
+    s.push_str(".mu-log-viewer[data-component-id=\"obs-logs-viewer\"] .mu-log-lines{max-height:clamp(360px,68dvh,820px);overflow-y:auto;overscroll-behavior:contain}\n");
     s.push_str(".mu-log-line{display:flex;flex-wrap:wrap;gap:8px;padding:3px 0}\n");
     s.push_str(".mu-log-viewer[data-wrap=\"true\"] .mu-log-text{white-space:pre-wrap;word-break:break-word}\n");
     s.push_str(".mu-log-viewer[data-wrap=\"false\"] .mu-log-text{white-space:pre}\n");
@@ -229,6 +230,9 @@ mod tests {
         assert!(css.contains(".mu-role-row .mu-btn[disabled]"));
         assert!(css.contains(
             ".mu-section[data-full-width=\"true\"],.mu-section[data-section-id^=\"sec-dash-\"]{grid-column:1 / -1}"
+        ));
+        assert!(css.contains(
+            ".mu-log-viewer[data-component-id=\"obs-logs-viewer\"] .mu-log-lines{max-height:clamp(360px,68dvh,820px);overflow-y:auto;overscroll-behavior:contain}"
         ));
     }
 

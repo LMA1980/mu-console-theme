@@ -528,6 +528,7 @@ pub struct LogEntry {
     pub signal: Option<SignalGlyph>,
     pub text: String,
     pub trace_id: Option<String>,
+    pub anchor_key: Option<String>,
     pub action: Option<ActionControl>,
 }
 
