@@ -490,8 +490,20 @@ impl HtmlCoreSkin {
         }
         w.close();
 
+        let mut in_sparkline_grid = false;
         for comp in &section.components {
+            let is_sparkline = matches!(comp, SceneComponent::SparklineCard(_));
+            if is_sparkline && !in_sparkline_grid {
+                w.tag("div").attr("class", "mu-sparkline-grid").open();
+                in_sparkline_grid = true;
+            } else if !is_sparkline && in_sparkline_grid {
+                w.close();
+                in_sparkline_grid = false;
+            }
             self.write_component(w, comp);
+        }
+        if in_sparkline_grid {
+            w.close();
         }
 
         w.close();
@@ -920,7 +932,7 @@ impl HtmlCoreSkin {
             w.tag("p").attr("class", "mu-sparkline-range").text(range);
         }
         if let Some(act) = &card.action {
-            self.write_action_button(w, act, "mu-btn mu-btn-compact");
+            self.write_action_button(w, act, "mu-btn mu-btn-compact mu-sparkline-action");
         }
         w.close();
     }
@@ -1987,5 +1999,65 @@ pub(crate) mod tests {
         assert!(html.contains(r#"data-section-id="sec-dash-fleet" data-full-width="true""#));
         assert!(html.contains(r#"data-section-id="sec-dash-attention" data-full-width="true""#));
         assert!(!html.contains(r#"data-section-id="sec-overview" data-full-width="true""#));
+    }
+
+    #[test]
+    fn sparkline_cards_group_into_grid_and_emit_compact_action_class() {
+        let make_card = |idx: usize| {
+            SceneComponent::SparklineCard(SparklineCard {
+                id: format!("ci-scorecard:{idx}"),
+                title: format!("LMA1980/repo-{idx}"),
+                metric_value: "95%".into(),
+                unit: None,
+                delta_label: Some("cov 32.8% · 0 ok".into()),
+                tone: SemanticTone::Pass,
+                samples: vec![60.0, 75.0, 82.0, 95.0],
+                range_label: Some("main".into()),
+                action: Some(ActionControl::new(
+                    format!("repo-select:{idx}"),
+                    "Select",
+                    format!("repo-select:{idx}"),
+                )),
+            })
+        };
+        let mut scene = ConsoleScene::new("ci", "CI");
+        scene.sections = vec![
+            SceneSection::new("sec-ci-scorecards", "CI Scorecards Carousel")
+                .with_component(make_card(0))
+                .with_component(make_card(1)),
+            SceneSection::new("sec-mixed", "Mixed")
+                .with_component(make_card(2))
+                .with_component(SceneComponent::KeyValueList(KeyValueList {
+                    id: "kv-after".into(),
+                    title: "Summary".into(),
+                    entries: vec![KeyValueEntry {
+                        key: "Total".into(),
+                        value: "1".into(),
+                        detail: None,
+                        tone: SemanticTone::Neutral,
+                        mono: true,
+                        action: None,
+                    }],
+                })),
+        ];
+
+        let html = HtmlCoreSkin.render_scene(&scene, SceneViewport::DESKTOP);
+        assert_eq!(
+            html.matches(r#"<div class="mu-sparkline-grid">"#).count(),
+            2
+        );
+        assert!(html.contains(
+            r#"class="mu-btn mu-btn-compact mu-sparkline-action" data-control-id="repo-select:0""#
+        ));
+        let mixed_pos = html
+            .find(r#"data-section-id="sec-mixed""#)
+            .expect("sec-mixed");
+        let kv_pos = html[mixed_pos..]
+            .find(r#"data-component-id="kv-after""#)
+            .expect("kv-after");
+        let close_grid_pos = html[mixed_pos..]
+            .find(r#"</div><div class="mu-card mu-kv-list""#)
+            .expect("grid closed before kv list");
+        assert!(close_grid_pos < kv_pos);
     }
 }

@@ -116,6 +116,14 @@ pub fn tokens_css() -> String {
     s.push_str(
         ".mu-trainway-svg,.mu-sparkline-svg{width:100%;height:auto;display:block;max-width:100%}\n",
     );
+    s.push_str(".mu-sparkline-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:12px;align-items:stretch}\n");
+    s.push_str(".mu-sparkline-card{min-width:0}\n");
+    s.push_str(".mu-sparkline-card .mu-card-title{overflow-wrap:anywhere}\n");
+    s.push_str(".mu-sparkline-kpi{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}\n");
+    s.push_str(
+        ".mu-kpi-delta,.mu-sparkline-range{font-size:12px;color:var(--text-muted);margin:0}\n",
+    );
+    s.push_str(".mu-sparkline-action,.mu-sparkline-card>.mu-btn{align-self:center;width:fit-content;max-width:100%;margin-top:auto;justify-content:center;text-align:center;font-size:12px;line-height:1;padding:1em 2em}\n");
     s.push_str(".mu-matrix-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px}\n");
     s.push_str(".mu-matrix-cell{display:flex;flex-direction:column;gap:4px;padding:8px 10px;background:var(--bg-panel);border:1px solid var(--border-wireframe);border-radius:4px;text-align:left;color:var(--text-primary);font-family:var(--font-crt)}\n");
     s.push_str(".mu-matrix-btn{cursor:pointer}\n");
@@ -176,7 +184,7 @@ pub fn tokens_css() -> String {
         ".mu-role-row .mu-btn[disabled],.mu-role-row .mu-btn[aria-disabled=\"true\"]{opacity:1}\n",
     );
     s.push_str(".mu-invite-secret{padding:10px;background:var(--bg-screen);border:1px solid var(--status-pass);border-radius:4px;overflow-x:auto;word-break:break-all}\n");
-    s.push_str("@media (max-width:520px){.mu-console-scene{padding:8px 10px 20px}.mu-scene-grid{grid-template-columns:1fr}.mu-btn,.mu-tab{min-width:44px;min-height:44px}input,select,textarea,.mu-input{font-size:16px}}\n");
+    s.push_str("@media (max-width:520px){.mu-console-scene{padding:8px 10px 20px}.mu-scene-grid,.mu-sparkline-grid{grid-template-columns:1fr}.mu-btn,.mu-tab{min-width:44px;min-height:44px}input,select,textarea,.mu-input{font-size:16px}}\n");
     s
 }
 
@@ -233,6 +241,15 @@ mod tests {
         ));
         assert!(css.contains(
             ".mu-log-viewer[data-component-id=\"obs-logs-viewer\"] .mu-log-lines{max-height:clamp(360px,68dvh,820px);overflow-y:auto;overscroll-behavior:contain}"
+        ));
+        assert!(css.contains(
+            ".mu-sparkline-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:12px;align-items:stretch}"
+        ));
+        assert!(css.contains(
+            ".mu-sparkline-kpi{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px}"
+        ));
+        assert!(css.contains(
+            ".mu-sparkline-action,.mu-sparkline-card>.mu-btn{align-self:center;width:fit-content;max-width:100%;margin-top:auto;justify-content:center;text-align:center;font-size:12px;line-height:1;padding:1em 2em}"
         ));
     }
 

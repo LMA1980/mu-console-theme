@@ -2235,7 +2235,12 @@ fn render_wf_sparkline(w: &mut SvgWriter, s: &SparklineCard, r: Rect, vp: SceneV
         (Some(u), None) => format!("{}: {}{u}", s.title, s.metric_value),
         _ => format!("{}: {}", s.title, s.metric_value),
     };
-    let btn_w = if s.action.is_some() { 58.0 } else { 0.0 };
+    let bottom_btn = s.action.is_some() && r.h >= 64.0;
+    let btn_w = if s.action.is_some() && !bottom_btn {
+        58.0
+    } else {
+        0.0
+    };
     draw_wf_bold(
         w,
         r.x + 8.0,
@@ -2245,36 +2250,84 @@ fn render_wf_sparkline(w: &mut SvgWriter, s: &SparklineCard, r: Rect, vp: SceneV
         s.tone.wireframe_fg(),
         &kpi,
     );
-    if !s.samples.is_empty() && r.h >= 28.0 {
-        let plot = Rect::new(
-            r.x + 6.0,
-            r.y + 18.0,
-            (r.w - btn_w - 12.0).max(8.0),
-            (r.h - 22.0).max(6.0),
-        );
-        let d = sparkline_path(&s.samples, plot.x, plot.y, plot.w, plot.h, 3.0);
-        if !d.is_empty() {
-            w.tag("path")
-                .attr("d", d)
-                .attr("fill", "none")
-                .attr("stroke", s.tone.wireframe_fg())
-                .attr("stroke-width", 1.5)
-                .end();
+    if bottom_btn {
+        if let Some(range) = &s.range_label {
+            draw_wf_text(
+                w,
+                r.x + 8.0,
+                r.y + 28.0,
+                (r.w - 16.0).max(8.0),
+                9.5,
+                TEXT_MUTED,
+                range,
+            );
         }
-    }
-    if let Some(act) = &s.action {
-        draw_wf_button(
-            w,
-            Rect::new(
-                (r.right() - btn_w - 4.0).max(r.x),
-                r.y + 4.0,
-                btn_w,
-                (r.h - 8.0).clamp(10.0, 22.0),
-            ),
-            act,
-            "button",
-            vp,
-        );
+        let plot_top = if s.range_label.is_some() { 32.0 } else { 20.0 };
+        if !s.samples.is_empty() && r.h >= plot_top + 38.0 {
+            let plot = Rect::new(
+                r.x + 8.0,
+                r.y + plot_top,
+                (r.w - 16.0).max(8.0),
+                (r.h - plot_top - 34.0).max(8.0),
+            );
+            let d = sparkline_path(&s.samples, plot.x, plot.y, plot.w, plot.h, 3.0);
+            if !d.is_empty() {
+                w.tag("path")
+                    .attr("d", d)
+                    .attr("fill", "none")
+                    .attr("stroke", s.tone.wireframe_fg())
+                    .attr("stroke-width", 1.5)
+                    .end();
+            }
+        }
+        if let Some(act) = &s.action {
+            let bw = 76.0_f64.min((r.w - 12.0).max(24.0));
+            let bh = 22.0;
+            draw_wf_button(
+                w,
+                Rect::new(
+                    r.x + (r.w - bw) * 0.5,
+                    (r.bottom() - bh - 6.0).max(r.y + 4.0),
+                    bw,
+                    bh,
+                ),
+                act,
+                "button",
+                vp,
+            );
+        }
+    } else {
+        if !s.samples.is_empty() && r.h >= 28.0 {
+            let plot = Rect::new(
+                r.x + 6.0,
+                r.y + 18.0,
+                (r.w - btn_w - 12.0).max(8.0),
+                (r.h - 22.0).max(6.0),
+            );
+            let d = sparkline_path(&s.samples, plot.x, plot.y, plot.w, plot.h, 3.0);
+            if !d.is_empty() {
+                w.tag("path")
+                    .attr("d", d)
+                    .attr("fill", "none")
+                    .attr("stroke", s.tone.wireframe_fg())
+                    .attr("stroke-width", 1.5)
+                    .end();
+            }
+        }
+        if let Some(act) = &s.action {
+            draw_wf_button(
+                w,
+                Rect::new(
+                    (r.right() - btn_w - 4.0).max(r.x),
+                    r.y + 4.0,
+                    btn_w,
+                    (r.h - 8.0).clamp(10.0, 22.0),
+                ),
+                act,
+                "button",
+                vp,
+            );
+        }
     }
     w.close();
 }
@@ -2433,11 +2486,40 @@ fn render_wf_section(
     let n = sec.components.len();
     if n > 0 && inner.h >= 16.0 {
         let gap = 5.0;
-        let ch = ((inner.h - gap * (n - 1) as f64) / n as f64).max(14.0);
-        for (i, comp) in sec.components.iter().enumerate() {
-            let cy = inner.y + i as f64 * (ch + gap);
-            let comp_r = Rect::new(inner.x, cy, inner.w, ch.min((inner.bottom() - cy).max(0.0)));
-            render_wf_component(w, comp, comp_r, vp);
+        let all_sparklines = sec
+            .components
+            .iter()
+            .all(|c| matches!(c, SceneComponent::SparklineCard(_)));
+        if all_sparklines {
+            let grid_cols = if vp.is_phone() || inner.w < 560.0 {
+                1
+            } else {
+                (((inner.w + gap) / (280.0 + gap)).floor() as usize).clamp(2, 4)
+            };
+            let rows = n.div_ceil(grid_cols).max(1);
+            let cw = ((inner.w - gap * (grid_cols - 1) as f64) / grid_cols as f64).max(16.0);
+            let ch = ((inner.h - gap * (rows - 1) as f64) / rows as f64).clamp(14.0, 184.0);
+            for (i, comp) in sec.components.iter().enumerate() {
+                let col = i % grid_cols;
+                let row = i / grid_cols;
+                let cx = inner.x + col as f64 * (cw + gap);
+                let cy = inner.y + row as f64 * (ch + gap);
+                let comp_r = Rect::new(
+                    cx,
+                    cy,
+                    cw.min((inner.right() - cx).max(0.0)),
+                    ch.min((inner.bottom() - cy).max(0.0)),
+                );
+                render_wf_component(w, comp, comp_r, vp);
+            }
+        } else {
+            let ch = ((inner.h - gap * (n - 1) as f64) / n as f64).max(14.0);
+            for (i, comp) in sec.components.iter().enumerate() {
+                let cy = inner.y + i as f64 * (ch + gap);
+                let comp_r =
+                    Rect::new(inner.x, cy, inner.w, ch.min((inner.bottom() - cy).max(0.0)));
+                render_wf_component(w, comp, comp_r, vp);
+            }
         }
     }
     w.close();
@@ -3730,5 +3812,118 @@ mod tests {
         assert!(panel_rects[0].2 > SceneViewport::DESKTOP.width - 40.0);
         assert!(panel_rects[0].1 < panel_rects[1].1);
         assert!(panel_rects[1].1 < panel_rects[2].1);
+    }
+
+    #[test]
+    fn wireframe_sparkline_section_uses_multi_column_grid_and_compact_centered_action() {
+        let make_card = |idx: usize| {
+            SceneComponent::SparklineCard(SparklineCard {
+                id: format!("ci-scorecard:{idx}"),
+                title: format!("LMA1980/repo-{idx}"),
+                metric_value: "95%".into(),
+                unit: None,
+                delta_label: Some("cov 32.8% · 0 ok".into()),
+                tone: SemanticTone::Pass,
+                samples: vec![60.0, 75.0, 82.0, 95.0],
+                range_label: Some("main".into()),
+                action: Some(ActionControl::new(
+                    format!("repo-select:{idx}"),
+                    "Select",
+                    format!("repo-select:{idx}"),
+                )),
+            })
+        };
+
+        let mut single_scene = ConsoleScene::new("ci", "CI");
+        single_scene.sections =
+            vec![SceneSection::new("sec-ci-scorecards", "CI Scorecards")
+                .with_component(make_card(0))];
+        let single_svg = WireframeSkin.render_scene(&single_scene, SceneViewport::DESKTOP);
+        assert_svg_strictly_bounded(&single_svg, SceneViewport::DESKTOP);
+        let single_doc = roxmltree::Document::parse(&single_svg).expect("valid single SVG");
+        let card_group = single_doc
+            .descendants()
+            .find(|n| n.attribute("data-component-id") == Some("ci-scorecard:0"))
+            .expect("card 0");
+        let card_rect = card_group
+            .children()
+            .find(|n| n.has_tag_name("rect"))
+            .expect("card rect");
+        let card_x: f64 = card_rect.attribute("x").unwrap().parse().unwrap();
+        let card_w: f64 = card_rect.attribute("width").unwrap().parse().unwrap();
+        assert!(
+            card_w < SceneViewport::DESKTOP.width * 0.45,
+            "single scorecard must stay column-bounded, got width {card_w}"
+        );
+        let btn_group = card_group
+            .descendants()
+            .find(|n| n.attribute("data-control-id") == Some("repo-select:0"))
+            .expect("select button");
+        let btn_rect = btn_group
+            .children()
+            .find(|n| n.has_tag_name("rect"))
+            .expect("button rect");
+        let btn_x: f64 = btn_rect.attribute("x").unwrap().parse().unwrap();
+        let btn_w: f64 = btn_rect.attribute("width").unwrap().parse().unwrap();
+        assert!(
+            btn_w <= 80.0,
+            "select button must stay compact, got {btn_w}"
+        );
+        let card_center = card_x + card_w * 0.5;
+        let btn_center = btn_x + btn_w * 0.5;
+        assert!(
+            (card_center - btn_center).abs() < 2.0,
+            "select button must be centered ({btn_center} vs {card_center})"
+        );
+
+        let mut multi_scene = ConsoleScene::new("ci", "CI");
+        multi_scene.sections = vec![SceneSection::new("sec-ci-scorecards", "CI Scorecards")
+            .with_components((0..6).map(make_card).collect())];
+        for vp in [
+            SceneViewport::DESKTOP,
+            SceneViewport::TABLET,
+            SceneViewport::COMPACT_LANDSCAPE,
+            SceneViewport::PHONE,
+        ] {
+            let svg = WireframeSkin.render_scene(&multi_scene, vp);
+            assert_svg_strictly_bounded(&svg, vp);
+        }
+        let multi_svg = WireframeSkin.render_scene(&multi_scene, SceneViewport::DESKTOP);
+        let multi_doc = roxmltree::Document::parse(&multi_svg).expect("valid multi SVG");
+        let rect_pos = |cid: &str| -> (f64, f64) {
+            let g = multi_doc
+                .descendants()
+                .find(|n| n.attribute("data-component-id") == Some(cid))
+                .expect("card group");
+            let r = g
+                .children()
+                .find(|n| n.has_tag_name("rect"))
+                .expect("card rect");
+            (
+                r.attribute("x").unwrap().parse().unwrap(),
+                r.attribute("y").unwrap().parse().unwrap(),
+            )
+        };
+        let (x0, y0) = rect_pos("ci-scorecard:0");
+        let (x1, y1) = rect_pos("ci-scorecard:1");
+        assert!((y0 - y1).abs() < 1e-6, "cards 0 and 1 share row 0");
+        assert!(x1 > x0, "card 1 is to the right of card 0");
+
+        let phone_svg = WireframeSkin.render_scene(&multi_scene, SceneViewport::PHONE);
+        let phone_doc = roxmltree::Document::parse(&phone_svg).expect("valid phone SVG");
+        let phone_y = |cid: &str| -> f64 {
+            let g = phone_doc
+                .descendants()
+                .find(|n| n.attribute("data-component-id") == Some(cid))
+                .expect("card group");
+            g.children()
+                .find(|n| n.has_tag_name("rect"))
+                .expect("card rect")
+                .attribute("y")
+                .unwrap()
+                .parse()
+                .unwrap()
+        };
+        assert!(phone_y("ci-scorecard:1") > phone_y("ci-scorecard:0"));
     }
 }
